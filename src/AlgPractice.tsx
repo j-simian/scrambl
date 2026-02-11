@@ -44,6 +44,7 @@ const PAINT_COLORS = [
   { value: 3, color: '#3b82f6', label: 'Blue' },
   { value: 4, color: '#22c55e', label: 'Green' },
   { value: 5, color: '#f97316', label: 'Orange' },
+  { value: 6, color: '#ffffff', label: 'White' },
 ]
 
 function overrideKey(caseId: string): string {
@@ -558,6 +559,11 @@ export default function AlgPractice() {
         {selectedSet.cases.length > 0 && (
           <button className="alg-practice-set-btn" onClick={practiceSet}>Practice Set</button>
         )}
+        <button className="alg-add-case-btn" onClick={() => {
+          const id = `${selectedSet.id}-${Date.now()}`
+          const blank: AlgCase = { id, name: '', alg: '', top: Array(9).fill(0), sides: Array(12).fill(0) }
+          openEditModal(blank, true)
+        }}>+ Add Case</button>
 
         {hasSections ? (
           <>
@@ -597,11 +603,6 @@ export default function AlgPractice() {
             <div className="alg-case-grid">
               {selectedSet.cases.map(c => renderCaseCard(c.id, '__flat'))}
             </div>
-            <button className="alg-add-case-btn" onClick={() => {
-              const id = `${selectedSet.id}-${Date.now()}`
-              const blank: AlgCase = { id, name: '', alg: '', top: Array(9).fill(0), sides: Array(12).fill(0) }
-              openEditModal(blank, true)
-            }}>+ Add Case</button>
             <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
           </>
         )}
@@ -629,7 +630,7 @@ export default function AlgPractice() {
                   }}
                 />
                 <div className="alg-edit-palette">
-                  {PAINT_COLORS.map(({ value, color, label }) => (
+                  {PAINT_COLORS.filter(({ value }) => selectedSet?.colors || value <= 1).map(({ value, color, label }) => (
                     <button
                       key={value}
                       className={`alg-palette-swatch ${selectedColor === value ? 'active' : ''}`}

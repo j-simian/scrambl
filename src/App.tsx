@@ -244,7 +244,10 @@ migrateOldData()
 
 const DEFAULT_EVENT = EVENTS.find(e => e.id === '3x3')!
 
+type Page = 'timer' | 'algs'
+
 function App() {
+  const [page, setPage] = useState<Page>('timer')
   const [currentEvent, setCurrentEvent] = useState<EventConfig>(DEFAULT_EVENT)
   const [timerState, setTimerState] = useState<TimerState>('idle')
   const [displayTime, setDisplayTime] = useState(0)
@@ -411,7 +414,14 @@ function App() {
   return (
     <div className="app">
       <header>
-        <h1>Cube Timer</h1>
+        <h1>scrambl</h1>
+        <nav className="page-tabs">
+          <button className={`page-tab ${page === 'timer' ? 'active' : ''}`} onClick={() => setPage('timer')}>Timer</button>
+          <button className={`page-tab ${page === 'algs' ? 'active' : ''}`} onClick={() => setPage('algs')}>Alg Practice</button>
+        </nav>
+      </header>
+
+      {page === 'timer' && <>
         <div className="event-tabs">
           {EVENT_GROUPS.map(group => (
             <div key={group} className="event-tab-row">
@@ -427,7 +437,6 @@ function App() {
             </div>
           ))}
         </div>
-      </header>
 
       <main>
         <div className="scramble">{scramble}</div>
@@ -508,6 +517,16 @@ function App() {
           </div>
         )}
       </main>
+      </>}
+
+      {page === 'algs' && (
+        <main>
+          <div className="alg-placeholder">
+            <h2>Alg Practice</h2>
+            <p>Coming soon</p>
+          </div>
+        </main>
+      )}
     </div>
   )
 }

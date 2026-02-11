@@ -1,0 +1,129 @@
+import type { AlgCase, AlgSet } from './oll'
+
+// PLL: 21 cases
+// For PLL all top stickers are yellow, so top is all 1s.
+// We use sides[] to show the permutation pattern on the sides.
+// sides[]: 12 values T(L,C,R), R(T,C,B), B(R,C,L), L(B,C,T)
+// Values represent color groups: stickers with the same number are the same color.
+// 0 = already solved (matches its own face).
+
+export const PLL_CASES: AlgCase[] = [
+  // --- Edge permutations ---
+  {
+    id: 'pll-ua', name: 'Ua-Perm', alg: "R U' R U R U R U' R' U' R2",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 2, 0, 0, 3, 0, 0, 4, 0, 0, 0, 0],
+  },
+  {
+    id: 'pll-ub', name: 'Ub-Perm', alg: "R2 U R U R' U' R' U' R' U R'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 4, 0, 0, 0, 0, 0, 2, 0, 0, 3, 0],
+  },
+  {
+    id: 'pll-h', name: 'H-Perm', alg: "M2 U M2 U2 M2 U M2",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 3, 0, 0, 4, 0, 0, 3, 0, 0, 4, 0],
+  },
+  {
+    id: 'pll-z', name: 'Z-Perm', alg: "M2 U M2 U M' U2 M2 U2 M' U2",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 4, 0, 0, 3, 0, 0, 4, 0, 0, 3, 0],
+  },
+  // --- Corner permutations ---
+  {
+    id: 'pll-aa', name: 'Aa-Perm', alg: "x R' U R' D2 R U' R' D2 R2 x'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [2, 0, 0, 0, 0, 3, 4, 0, 0, 0, 0, 0],
+  },
+  {
+    id: 'pll-ab', name: 'Ab-Perm', alg: "x R2 D2 R U R' D2 R U' R x'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 3, 4, 0, 0, 0, 0, 0, 0, 0, 2],
+  },
+  {
+    id: 'pll-e', name: 'E-Perm', alg: "x' R U' R' D R U R' D' R U R' D R U' R' D' x",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [3, 0, 4, 4, 0, 3, 3, 0, 4, 4, 0, 3],
+  },
+  // --- Adjacent corner swaps ---
+  {
+    id: 'pll-t', name: 'T-Perm', alg: "R U R' U' R' F R2 U' R' U' R U R' F'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 0, 3, 2, 3, 0, 0, 0, 0, 0, 0],
+  },
+  {
+    id: 'pll-f', name: 'F-Perm', alg: "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 0, 0, 2, 0, 3, 0, 3, 0, 0, 0],
+  },
+  // --- J/L perms ---
+  {
+    id: 'pll-ja', name: 'Ja-Perm', alg: "x R2 F R F' R U2 r' U r U2 x'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0],
+  },
+  {
+    id: 'pll-jb', name: 'Jb-Perm', alg: "R U R' F' R U R' U' R' F R2 U' R'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0],
+  },
+  {
+    id: 'pll-ra', name: 'Ra-Perm', alg: "R U' R' U' R U R D R' U' R D' R' U2 R'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0, 3],
+  },
+  {
+    id: 'pll-rb', name: 'Rb-Perm', alg: "R' U2 R U2 R' F R U R' U' R' F' R2",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 2, 0],
+  },
+  // --- G perms ---
+  {
+    id: 'pll-ga', name: 'Ga-Perm', alg: "R2 U R' U R' U' R U' R2 D U' R' U R D'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [3, 2, 0, 0, 4, 3, 0, 0, 0, 0, 0, 4],
+  },
+  {
+    id: 'pll-gb', name: 'Gb-Perm', alg: "R' U' R U D' R2 U R' U R U' R U' R2 D",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 4, 3, 4, 0, 0, 0, 0, 2, 0, 3, 0],
+  },
+  {
+    id: 'pll-gc', name: 'Gc-Perm', alg: "R2 U' R U' R U R' U R2 D' U R U' R' D",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 4, 0, 2, 0, 3, 4, 0, 0, 0, 3],
+  },
+  {
+    id: 'pll-gd', name: 'Gd-Perm', alg: "R U R' U' D R2 U' R U' R' U R' U R2 D'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [4, 0, 0, 0, 0, 4, 0, 3, 0, 3, 2, 0],
+  },
+  // --- N perms ---
+  {
+    id: 'pll-na', name: 'Na-Perm', alg: "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [3, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 3],
+  },
+  {
+    id: 'pll-nb', name: 'Nb-Perm', alg: "R' U R U' R' F' U' F R U R' F R' F' R U' R",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 3, 3, 0, 0, 0, 0, 3, 3, 0, 0],
+  },
+  // --- V/Y perms ---
+  {
+    id: 'pll-v', name: 'V-Perm', alg: "R' U R' d' R' F' R2 U' R' U R' F R F",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 2, 0],
+  },
+  {
+    id: 'pll-y', name: 'Y-Perm', alg: "F R U' R' U' R U R' F' R U R' U' R' F R F'",
+    top: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    sides: [0, 0, 3, 0, 2, 0, 3, 0, 0, 0, 0, 0],
+  },
+]
+
+export const PLL_SET: AlgSet = {
+  id: 'pll',
+  name: 'PLL',
+  cases: PLL_CASES,
+}

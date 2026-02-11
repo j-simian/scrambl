@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './App.css'
+import AlgPractice from './AlgPractice'
 
 type TimerState = 'idle' | 'holding' | 'ready' | 'running'
 
@@ -346,6 +347,8 @@ function App() {
   }
 
   useEffect(() => {
+    if (page !== 'timer') return
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return
       e.preventDefault()
@@ -379,7 +382,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [timerState, startTimer, stopTimer])
+  }, [page, timerState, startTimer, stopTimer])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -521,10 +524,7 @@ function App() {
 
       {page === 'algs' && (
         <main>
-          <div className="alg-placeholder">
-            <h2>Alg Practice</h2>
-            <p>Coming soon</p>
-          </div>
+          <AlgPractice />
         </main>
       )}
     </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { OLL_SET } from './algs/oll'
 import { PLL_SET } from './algs/pll'
-import type { AlgCase, AlgSet } from './algs/oll'
+import type { AlgCase, AlgSet, AlgSetSection } from './algs/oll'
 import OllDiagram from './OllDiagram'
 
 type View = 'sets' | 'cases' | 'practice'
@@ -22,6 +22,30 @@ interface CaseOverride {
 
 const ALG_SETS: AlgSet[] = [OLL_SET, PLL_SET]
 
+const CUSTOM_SETS_KEY = 'scrambl-custom-algsets'
+
+function loadCustomSets(): AlgSet[] {
+  try {
+    const stored = localStorage.getItem(CUSTOM_SETS_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function saveCustomSets(sets: AlgSet[]): void {
+  localStorage.setItem(CUSTOM_SETS_KEY, JSON.stringify(sets))
+}
+
+const PAINT_COLORS = [
+  { value: 0, color: '#374151', label: 'Gray (unset)' },
+  { value: 1, color: '#eab308', label: 'Yellow' },
+  { value: 2, color: '#ef4444', label: 'Red' },
+  { value: 3, color: '#3b82f6', label: 'Blue' },
+  { value: 4, color: '#22c55e', label: 'Green' },
+  { value: 5, color: '#f97316', label: 'Orange' },
+]
+
 function overrideKey(caseId: string): string {
   return `scrambl-alg-override-${caseId}`
 }
@@ -35,10 +59,6 @@ function loadOverride(caseId: string): CaseOverride | null {
   }
 }
 
-function saveOverride(caseId: string, override: CaseOverride): void {
-  localStorage.setItem(overrideKey(caseId), JSON.stringify(override))
-}
-
 function applyOverride(c: AlgCase): AlgCase {
   const o = loadOverride(c.id)
   if (!o) return c
@@ -49,6 +69,27 @@ function applyOverride(c: AlgCase): AlgCase {
     top: o.top ?? c.top,
     sides: o.sides ?? c.sides,
   }
+}
+
+function initSets(): AlgSet[] {
+  const stored = loadCustomSets()
+  const ids = new Set(stored.map(s => s.id))
+  let needsSave = false
+  const result = [...stored]
+  // Seed built-in sets if not yet present, applying any existing overrides
+  for (const builtIn of [...ALG_SETS].reverse()) {
+    if (!ids.has(builtIn.id)) {
+      const cases = builtIn.cases.map(c => {
+        const merged = applyOverride(c)
+        localStorage.removeItem(overrideKey(c.id))
+        return merged
+      })
+      result.unshift({ ...builtIn, cases })
+      needsSave = true
+    }
+  }
+  if (needsSave) saveCustomSets(result)
+  return result
 }
 
 function storageKey(caseId: string): string {
@@ -85,6 +126,27 @@ function randomCase(set: AlgSet, exclude?: AlgCase): AlgCase {
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
+function sectionsKey(setId: string): string {
+  return `scrambl-alg-sections-${setId}`
+}
+
+function loadSections(set: AlgSet): AlgSetSection[] {
+  try {
+    const stored = localStorage.getItem(sectionsKey(set.id))
+    if (stored) return JSON.parse(stored)
+  } catch { /* ignore */ }
+  return set.sections ? set.sections.map(s => ({ ...s, caseIds: [...s.caseIds] })) : []
+}
+
+function saveSections(setId: string, sections: AlgSetSection[]): void {
+  localStorage.setItem(sectionsKey(setId), JSON.stringify(sections))
+}
+
+function getUnsortedIds(set: AlgSet, sections: AlgSetSection[]): string[] {
+  const assigned = new Set(sections.flatMap(s => s.caseIds))
+  return set.cases.map(c => c.id).filter(id => !assigned.has(id))
+}
+
 export default function AlgPractice() {
   const [view, setView] = useState<View>('sets')
   const [selectedSet, setSelectedSet] = useState<AlgSet | null>(null)
@@ -98,8 +160,22 @@ export default function AlgPractice() {
   const [editAlg, setEditAlg] = useState('')
   const [editTop, setEditTop] = useState<number[]>([])
   const [editSides, setEditSides] = useState<number[]>([])
+  const [selectedColor, setSelectedColor] = useState(0)
+  const [isNewCase, setIsNewCase] = useState(false)
+  // Set edit modal state
+  const [editingSetInfo, setEditingSetInfo] = useState(false)
+  const [editSetName, setEditSetName] = useState('')
+  const [editSetColors, setEditSetColors] = useState(false)
   // Force re-render of case grid after saving
   const [overrideVersion, setOverrideVersion] = useState(0)
+
+  // Custom sets
+  const [customSets, setCustomSets] = useState<AlgSet[]>(initSets)
+
+  // Sections state
+  const [sections, setSections] = useState<AlgSetSection[]>([])
+  const [dragOverSection, setDragOverSection] = useState<string | null>(null)
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
 
   // Timer state
   const [timerState, setTimerState] = useState<TimerState>('idle')
@@ -139,7 +215,7 @@ export default function AlgPractice() {
       if (randomMode && selectedSet) {
         const prev = loadTimes(selectedCase.id)
         saveTimes(selectedCase.id, [newSolve, ...prev])
-        const next = applyOverride(randomCase(selectedSet, selectedCase))
+        const next = randomCase(selectedSet, selectedCase)
         setSelectedCase(next)
         setSolves(loadTimes(next.id))
         setShowAlg(false)
@@ -202,45 +278,47 @@ export default function AlgPractice() {
 
   const openSet = (set: AlgSet) => {
     setSelectedSet(set)
+    setSections(loadSections(set))
     setView('cases')
   }
 
-  const openEditModal = (algCase: AlgCase) => {
-    const c = applyOverride(algCase)
-    setEditingCase(algCase) // keep base reference for saving
-    setEditName(c.name)
-    setEditAlg(c.alg)
-    setEditTop([...c.top])
-    setEditSides([...(c.sides ?? Array(12).fill(0))])
+  const openEditModal = (algCase: AlgCase, asNew = false) => {
+    setEditingCase(algCase)
+    setIsNewCase(asNew)
+    setEditName(algCase.name)
+    setEditAlg(algCase.alg)
+    setEditTop([...algCase.top])
+    setEditSides([...(algCase.sides ?? Array(12).fill(0))])
   }
 
   const saveEdit = () => {
-    if (!editingCase) return
-    const override: CaseOverride = {
+    if (!editingCase || !selectedSet) return
+    const updatedCase: AlgCase = {
+      id: editingCase.id,
       name: editName,
       alg: editAlg,
       top: editTop,
       sides: editSides,
     }
-    saveOverride(editingCase.id, override)
+    const updatedSets = customSets.map(s => {
+      if (s.id !== selectedSet.id) return s
+      if (isNewCase) {
+        return { ...s, cases: [...s.cases, updatedCase] }
+      }
+      return { ...s, cases: s.cases.map(c => c.id === editingCase.id ? updatedCase : c) }
+    })
+    saveCustomSets(updatedSets)
+    setCustomSets(updatedSets)
+    const updated = updatedSets.find(s => s.id === selectedSet.id)
+    if (updated) setSelectedSet(updated)
     setEditingCase(null)
-    setOverrideVersion(v => v + 1)
-  }
-
-  const resetEdit = () => {
-    if (!editingCase) return
-    localStorage.removeItem(overrideKey(editingCase.id))
-    setEditName(editingCase.name)
-    setEditAlg(editingCase.alg)
-    setEditTop([...editingCase.top])
-    setEditSides([...(editingCase.sides ?? Array(12).fill(0))])
+    setIsNewCase(false)
     setOverrideVersion(v => v + 1)
   }
 
   const practiceCase = (algCase: AlgCase) => {
-    const c = applyOverride(algCase)
-    setSelectedCase(c)
-    setSolves(loadTimes(c.id))
+    setSelectedCase(algCase)
+    setSolves(loadTimes(algCase.id))
     setDisplayTime(0)
     setTimerState('idle')
     setShowAlg(false)
@@ -250,7 +328,7 @@ export default function AlgPractice() {
 
   const practiceSet = () => {
     if (!selectedSet) return
-    const c = applyOverride(randomCase(selectedSet))
+    const c = randomCase(selectedSet)
     setSelectedCase(c)
     setSolves(loadTimes(c.id))
     setDisplayTime(0)
@@ -286,17 +364,72 @@ export default function AlgPractice() {
     ? Math.min(...solves.map(s => s.time))
     : null
 
+  const createCustomSet = () => {
+    const id = `custom-${Date.now()}`
+    const newSet: AlgSet = { id, name: 'New Set', cases: [], colors: true }
+    const updated = [...customSets, newSet]
+    saveCustomSets(updated)
+    setCustomSets(updated)
+    openSet(newSet)
+  }
+
+  const deleteCustomSet = (e: React.MouseEvent, setId: string) => {
+    e.stopPropagation()
+    const updated = customSets.filter(s => s.id !== setId)
+    saveCustomSets(updated)
+    setCustomSets(updated)
+  }
+
+  const deleteCase = () => {
+    if (!editingCase || !selectedSet) return
+    const updatedSets = customSets.map(s => {
+      if (s.id !== selectedSet.id) return s
+      return { ...s, cases: s.cases.filter(c => c.id !== editingCase.id) }
+    })
+    saveCustomSets(updatedSets)
+    setCustomSets(updatedSets)
+    const updated = updatedSets.find(s => s.id === selectedSet.id)
+    if (updated) setSelectedSet(updated)
+    setEditingCase(null)
+    setIsNewCase(false)
+    setOverrideVersion(v => v + 1)
+  }
+
+  const openSetEdit = () => {
+    if (!selectedSet) return
+    setEditSetName(selectedSet.name)
+    setEditSetColors(selectedSet.colors ?? false)
+    setEditingSetInfo(true)
+  }
+
+  const saveSetEdit = () => {
+    if (!selectedSet) return
+    const updatedSets = customSets.map(s =>
+      s.id === selectedSet.id ? { ...s, name: editSetName, colors: editSetColors } : s
+    )
+    saveCustomSets(updatedSets)
+    setCustomSets(updatedSets)
+    const updated = updatedSets.find(s => s.id === selectedSet.id)
+    if (updated) setSelectedSet(updated)
+    setEditingSetInfo(false)
+  }
+
   // --- Set list view ---
   if (view === 'sets') {
     return (
       <div className="alg-practice">
         <div className="alg-sets">
-          {ALG_SETS.map(set => (
+          {customSets.map(set => (
             <button key={set.id} className="alg-set-card" onClick={() => openSet(set)}>
               <span className="alg-set-name">{set.name}</span>
               <span className="alg-set-count">{set.cases.length} cases</span>
+              <span className="alg-set-delete" onClick={e => deleteCustomSet(e, set.id)}>&times;</span>
             </button>
           ))}
+          <button className="alg-new-set-card" onClick={createCustomSet}>
+            <span className="alg-set-name">+</span>
+            <span className="alg-set-count">New Set</span>
+          </button>
         </div>
       </div>
     )
@@ -304,46 +437,208 @@ export default function AlgPractice() {
 
   // --- Case list view ---
   if (view === 'cases' && selectedSet) {
-    // Apply overrides for display (overrideVersion forces refresh)
-    const displayCases = selectedSet.cases.map(c => applyOverride(c))
     void overrideVersion // used to trigger re-render
+    const caseMap = new Map(selectedSet.cases.map(c => [c.id, c]))
+
+    const unsortedIds = getUnsortedIds(selectedSet, sections)
+    const hasSections = sections.length > 0 || (selectedSet.sections && selectedSet.sections.length > 0)
+
+    const handleDragStart = (e: React.DragEvent, caseId: string, fromSectionId: string) => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({ caseId, fromSectionId }))
+      e.dataTransfer.effectAllowed = 'move'
+    }
+
+    const handleDragOver = (e: React.DragEvent, sectionId: string) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverSection(sectionId)
+    }
+
+    const handleDragLeave = (e: React.DragEvent, sectionId: string) => {
+      // Only clear if we're actually leaving this section (not entering a child)
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+        if (dragOverSection === sectionId) setDragOverSection(null)
+      }
+    }
+
+    const handleDrop = (e: React.DragEvent, toSectionId: string) => {
+      e.preventDefault()
+      setDragOverSection(null)
+      try {
+        const { caseId, fromSectionId } = JSON.parse(e.dataTransfer.getData('text/plain'))
+        if (fromSectionId === toSectionId) return
+
+        // Remove from source section (if it's a real section, not unsorted)
+        // Add to target section (if it's a real section, not unsorted)
+        const next = sections.map(s => {
+          if (s.id === fromSectionId) {
+            return { ...s, caseIds: s.caseIds.filter(id => id !== caseId) }
+          }
+          if (s.id === toSectionId) {
+            return { ...s, caseIds: [...s.caseIds, caseId] }
+          }
+          return s
+        })
+        setSections(next)
+        saveSections(selectedSet.id, next)
+      } catch { /* ignore bad data */ }
+    }
+
+    const handleDragEnd = () => {
+      setDragOverSection(null)
+    }
+
+    const addSection = () => {
+      const id = `sec-${Date.now()}`
+      const next = [...sections, { id, name: 'New Section', caseIds: [] }]
+      setSections(next)
+      saveSections(selectedSet.id, next)
+      setEditingSectionId(id)
+    }
+
+    const deleteSection = (sectionId: string) => {
+      const next = sections.filter(s => s.id !== sectionId)
+      setSections(next)
+      saveSections(selectedSet.id, next)
+    }
+
+    const renameSection = (sectionId: string, name: string) => {
+      const next = sections.map(s => s.id === sectionId ? { ...s, name } : s)
+      setSections(next)
+      saveSections(selectedSet.id, next)
+    }
+
+    const renderCaseCard = (caseId: string, sectionId: string) => {
+      const c = caseMap.get(caseId)
+      if (!c) return null
+      return (
+        <button
+          key={caseId}
+          className="alg-case-card"
+          draggable={hasSections}
+          onDragStart={e => handleDragStart(e, caseId, sectionId)}
+          onDragEnd={handleDragEnd}
+          onClick={() => openEditModal(c)}
+        >
+          <OllDiagram top={c.top} sides={c.sides} size={60} colors={selectedSet.colors} />
+          <span className="alg-case-name">{c.name}</span>
+        </button>
+      )
+    }
+
+    const renderSectionHeader = (section: AlgSetSection) => (
+      <div className="alg-section-header" key={`header-${section.id}`}>
+        {editingSectionId === section.id ? (
+          <input
+            className="alg-section-name-input"
+            autoFocus
+            defaultValue={section.name}
+            onBlur={e => { renameSection(section.id, e.target.value || section.name); setEditingSectionId(null) }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          />
+        ) : (
+          <h3
+            className="alg-section-name"
+            onClick={() => setEditingSectionId(section.id)}
+          >
+            {section.name}
+          </h3>
+        )}
+        <button className="alg-section-delete" onClick={() => deleteSection(section.id)} title="Delete section">&times;</button>
+      </div>
+    )
 
     return (
       <div className="alg-practice">
         <button className="alg-back" onClick={goBackToSets}>&larr; Back</button>
-        <h2 className="alg-section-title">{selectedSet.name}</h2>
-        <button className="alg-practice-set-btn" onClick={practiceSet}>Practice Set</button>
-        <div className="alg-case-grid">
-          {displayCases.map((c, i) => (
-            <button key={c.id} className="alg-case-card" onClick={() => openEditModal(selectedSet.cases[i])}>
-              <OllDiagram top={c.top} sides={c.sides} size={60} />
-              <span className="alg-case-name">{c.name}</span>
-            </button>
-          ))}
+        <div className="alg-set-header">
+          <h2 className="alg-section-title">{selectedSet.name}</h2>
+          <button className="alg-set-edit-btn" onClick={openSetEdit} title="Edit set">&#9998;</button>
         </div>
+        {selectedSet.cases.length > 0 && (
+          <button className="alg-practice-set-btn" onClick={practiceSet}>Practice Set</button>
+        )}
+
+        {hasSections ? (
+          <>
+            {sections.map(section => (
+              <div
+                key={section.id}
+                className={`alg-section ${dragOverSection === section.id ? 'drag-over' : ''}`}
+                onDragOver={e => handleDragOver(e, section.id)}
+                onDragLeave={e => handleDragLeave(e, section.id)}
+                onDrop={e => handleDrop(e, section.id)}
+              >
+                {renderSectionHeader(section)}
+                <div className="alg-case-grid">
+                  {section.caseIds.map(id => renderCaseCard(id, section.id))}
+                </div>
+              </div>
+            ))}
+            {unsortedIds.length > 0 && (
+              <div
+                className={`alg-section alg-section-unsorted ${dragOverSection === '__unsorted' ? 'drag-over' : ''}`}
+                onDragOver={e => handleDragOver(e, '__unsorted')}
+                onDragLeave={e => handleDragLeave(e, '__unsorted')}
+                onDrop={e => handleDrop(e, '__unsorted')}
+              >
+                <div className="alg-section-header">
+                  <h3 className="alg-section-name unsorted">Unsorted</h3>
+                </div>
+                <div className="alg-case-grid">
+                  {unsortedIds.map(id => renderCaseCard(id, '__unsorted'))}
+                </div>
+              </div>
+            )}
+            <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
+          </>
+        ) : (
+          <>
+            <div className="alg-case-grid">
+              {selectedSet.cases.map(c => renderCaseCard(c.id, '__flat'))}
+            </div>
+            <button className="alg-add-case-btn" onClick={() => {
+              const id = `${selectedSet.id}-${Date.now()}`
+              const blank: AlgCase = { id, name: '', alg: '', top: Array(9).fill(0), sides: Array(12).fill(0) }
+              openEditModal(blank, true)
+            }}>+ Add Case</button>
+            <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
+          </>
+        )}
 
         {editingCase && (
-          <div className="modal-overlay" onClick={() => setEditingCase(null)}>
+          <div className="modal-overlay" onClick={() => { setEditingCase(null); setIsNewCase(false) }}>
             <div className="modal alg-edit-modal" onClick={e => e.stopPropagation()}>
-              <h3>Edit Case</h3>
+              <h3>{isNewCase ? 'Add Case' : 'Edit Case'}</h3>
 
-              <div className="alg-edit-diagram">
+              <div className="alg-edit-diagram-row">
                 <OllDiagram
                   top={editTop}
                   sides={editSides}
                   size={140}
+                  colors={selectedSet?.colors}
                   onToggleTop={i => {
                     const next = [...editTop]
-                    next[i] = next[i] === 1 ? 0 : 1
+                    next[i] = selectedColor
                     setEditTop(next)
                   }}
                   onToggleSide={i => {
                     const next = [...editSides]
-                    next[i] = next[i] === 1 ? 0 : 1
+                    next[i] = selectedColor
                     setEditSides(next)
                   }}
                 />
-                <span className="alg-edit-diagram-hint">Click stickers to toggle</span>
+                <div className="alg-edit-palette">
+                  {PAINT_COLORS.map(({ value, color, label }) => (
+                    <button
+                      key={value}
+                      className={`alg-palette-swatch ${selectedColor === value ? 'active' : ''}`}
+                      style={{ background: color }}
+                      title={label}
+                      onClick={() => setSelectedColor(value)}
+                    />
+                  ))}
+                </div>
               </div>
 
               <label className="alg-edit-label">
@@ -366,11 +661,47 @@ export default function AlgPractice() {
 
               <div className="alg-edit-actions">
                 <button className="alg-edit-save" onClick={saveEdit}>Save</button>
-                <button className="alg-edit-practice" onClick={() => { setEditingCase(null); practiceCase(editingCase) }}>Practice</button>
-                <button className="alg-edit-reset" onClick={resetEdit}>Reset</button>
+                {!isNewCase && (
+                  <button className="alg-edit-practice" onClick={() => { setEditingCase(null); practiceCase(editingCase) }}>Practice</button>
+                )}
+                {!isNewCase && (
+                  <button className="alg-edit-delete" onClick={deleteCase}>Delete</button>
+                )}
               </div>
 
-              <button className="modal-close" onClick={() => setEditingCase(null)}>Close</button>
+              <button className="modal-close" onClick={() => { setEditingCase(null); setIsNewCase(false) }}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {editingSetInfo && (
+          <div className="modal-overlay" onClick={() => setEditingSetInfo(false)}>
+            <div className="modal alg-edit-modal" onClick={e => e.stopPropagation()}>
+              <h3>Edit Set</h3>
+
+              <label className="alg-edit-label">
+                Name
+                <input
+                  type="text"
+                  value={editSetName}
+                  onChange={e => setEditSetName(e.target.value)}
+                />
+              </label>
+
+              <label className="alg-edit-toggle">
+                <input
+                  type="checkbox"
+                  checked={editSetColors}
+                  onChange={e => setEditSetColors(e.target.checked)}
+                />
+                Multi-color stickers
+              </label>
+
+              <div className="alg-edit-actions">
+                <button className="alg-edit-save" onClick={saveSetEdit}>Save</button>
+              </div>
+
+              <button className="modal-close" onClick={() => setEditingSetInfo(false)}>Close</button>
             </div>
           </div>
         )}
@@ -385,7 +716,7 @@ export default function AlgPractice() {
         <button className="alg-back" onClick={goBackToCases}>&larr; Back to {selectedSet?.name}</button>
 
         <div className="alg-practice-case">
-          <OllDiagram top={selectedCase.top} sides={selectedCase.sides} size={120} />
+          <OllDiagram top={selectedCase.top} sides={selectedCase.sides} size={120} colors={selectedSet?.colors} />
           <h2 className="alg-case-title">{selectedCase.name}</h2>
           <button className="alg-reveal-btn" onClick={() => setShowAlg(!showAlg)}>
             {showAlg ? 'Hide Algorithm' : 'Show Algorithm'}

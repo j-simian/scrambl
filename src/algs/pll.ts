@@ -1,4 +1,4 @@
-import type { AlgCase, AlgSet } from './oll'
+import type { AlgCase, AlgSet, AlgSetSection } from './oll'
 
 // PLL: 21 cases
 // For PLL all top stickers are yellow, so top is all 1s.
@@ -122,8 +122,32 @@ export const PLL_CASES: AlgCase[] = [
   },
 ]
 
+const PLL_SECTIONS: AlgSetSection[] = [
+  {
+    id: 'pll-sec-edges',
+    name: 'Edges only',
+    caseIds: ['pll-ua', 'pll-ub', 'pll-h', 'pll-z'],
+  },
+  {
+    id: 'pll-sec-corners',
+    name: 'Corners only',
+    caseIds: ['pll-aa', 'pll-ab', 'pll-e'],
+  },
+  {
+    id: 'pll-sec-both',
+    name: 'Both',
+    caseIds: [
+      'pll-t', 'pll-f', 'pll-ja', 'pll-jb', 'pll-ra', 'pll-rb',
+      'pll-ga', 'pll-gb', 'pll-gc', 'pll-gd', 'pll-na', 'pll-nb',
+      'pll-v', 'pll-y',
+    ],
+  },
+]
+
 export const PLL_SET: AlgSet = {
   id: 'pll',
   name: 'PLL',
   cases: PLL_CASES,
+  colors: true,
+  sections: PLL_SECTIONS,
 }

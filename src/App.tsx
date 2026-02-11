@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import './App.css'
+import AlgPractice from './AlgPractice'
 
 type TimerState = 'idle' | 'holding' | 'ready' | 'running'
 
@@ -244,7 +245,10 @@ migrateOldData()
 
 const DEFAULT_EVENT = EVENTS.find(e => e.id === '3x3')!
 
+type Page = 'timer' | 'algs'
+
 function App() {
+  const [page, setPage] = useState<Page>('timer')
   const [currentEvent, setCurrentEvent] = useState<EventConfig>(DEFAULT_EVENT)
   const [timerState, setTimerState] = useState<TimerState>('idle')
   const [displayTime, setDisplayTime] = useState(0)
@@ -343,6 +347,8 @@ function App() {
   }
 
   useEffect(() => {
+    if (page !== 'timer') return
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat) return
       e.preventDefault()
@@ -376,7 +382,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [timerState, startTimer, stopTimer])
+  }, [page, timerState, startTimer, stopTimer])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -411,7 +417,14 @@ function App() {
   return (
     <div className="app">
       <header>
-        <h1>Cube Timer</h1>
+        <h1>scrambl</h1>
+        <nav className="page-tabs">
+          <button className={`page-tab ${page === 'timer' ? 'active' : ''}`} onClick={() => setPage('timer')}>Timer</button>
+          <button className={`page-tab ${page === 'algs' ? 'active' : ''}`} onClick={() => setPage('algs')}>Alg Practice</button>
+        </nav>
+      </header>
+
+      {page === 'timer' && <>
         <div className="event-tabs">
           {EVENT_GROUPS.map(group => (
             <div key={group} className="event-tab-row">
@@ -427,7 +440,6 @@ function App() {
             </div>
           ))}
         </div>
-      </header>
 
       <main>
         <div className="scramble">{scramble}</div>
@@ -508,6 +520,13 @@ function App() {
           </div>
         )}
       </main>
+      </>}
+
+      {page === 'algs' && (
+        <main>
+          <AlgPractice />
+        </main>
+      )}
     </div>
   )
 }

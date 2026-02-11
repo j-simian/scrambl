@@ -2,7 +2,7 @@ interface OllDiagramProps {
   top: number[]      // 9 values
   sides?: number[]   // 12 values: T(L,C,R), R(T,C,B), B(R,C,L), L(B,C,T)
   size?: number
-  colors?: boolean   // true = all stickers use multi-color palette (0–5)
+  colors?: boolean   // true = all stickers use multi-color palette (0–6)
   onToggleTop?: (index: number) => void
   onToggleSide?: (index: number) => void
 }
@@ -18,6 +18,7 @@ const PALETTE: Record<number, string> = {
   3: '#3b82f6',    // blue
   4: '#22c55e',    // green
   5: '#f97316',    // orange
+  6: '#ffffff',    // white
 }
 
 function topColor(value: number, colorMode: boolean): string {

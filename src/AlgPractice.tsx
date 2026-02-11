@@ -612,6 +612,25 @@ export default function AlgPractice() {
             <div className="modal alg-edit-modal" onClick={e => e.stopPropagation()}>
               <h3>{isNewCase ? 'Add Case' : 'Edit Case'}</h3>
 
+              <div className="alg-edit-diagram-tools">
+                <button className="alg-tool-btn" title="Clear" onClick={() => {
+                  setEditTop(Array(9).fill(0))
+                  setEditSides(Array(12).fill(0))
+                }}>&#8709;</button>
+                <button className="alg-tool-btn" title="Rotate CCW" onClick={() => {
+                  const t = editTop
+                  setEditTop([t[2], t[5], t[8], t[1], t[4], t[7], t[0], t[3], t[6]])
+                  const s = editSides
+                  setEditSides([s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], s[11], s[0], s[1], s[2]])
+                }}>&#8634;</button>
+                <button className="alg-tool-btn" title="Rotate CW" onClick={() => {
+                  const t = editTop
+                  setEditTop([t[6], t[3], t[0], t[7], t[4], t[1], t[8], t[5], t[2]])
+                  const s = editSides
+                  setEditSides([s[9], s[10], s[11], s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8]])
+                }}>&#8635;</button>
+              </div>
+
               <div className="alg-edit-diagram-row">
                 <OllDiagram
                   top={editTop}

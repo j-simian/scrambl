@@ -592,6 +592,34 @@ main {
   width: 90vw;
 }
 
+.alg-edit-diagram-tools {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.alg-tool-btn {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.375rem;
+  color: inherit;
+  font-size: 1.1rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.alg-tool-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .alg-edit-diagram-row {
   display: flex;
   align-items: center;

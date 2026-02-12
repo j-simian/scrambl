@@ -191,6 +191,7 @@ export default function AlgPractice() {
   const startTimeRef = useRef<number>(0)
   const animationFrameRef = useRef<number>(0)
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const timerRef = useRef<HTMLDivElement>(null)
 
   const updateDisplay = useCallback(() => {
     if (startTimeRef.current > 0) {
@@ -235,7 +236,7 @@ export default function AlgPractice() {
     }
   }, [selectedCase, randomMode, selectedSet])
 
-  // Keyboard handler for practice timer
+  // Keyboard and touch/mouse handler for practice timer
   useEffect(() => {
     if (view !== 'practice') return
 
@@ -265,12 +266,47 @@ export default function AlgPractice() {
       }
     }
 
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault()
+      if (timerState === 'idle') {
+        setTimerState('holding')
+        holdTimeoutRef.current = setTimeout(() => {
+          setTimerState('ready')
+        }, 550)
+      } else if (timerState === 'running') {
+        stopTimer()
+      }
+    }
+
+    const handlePointerUp = () => {
+      if (timerState === 'holding') {
+        clearTimeout(holdTimeoutRef.current)
+        setTimerState('idle')
+      } else if (timerState === 'ready') {
+        startTimer()
+      }
+    }
+
+    const timerEl = timerRef.current
+    if (timerEl) {
+      timerEl.addEventListener('mousedown', handlePointerDown)
+      timerEl.addEventListener('touchstart', handlePointerDown, { passive: false })
+    }
+
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('mouseup', handlePointerUp)
+    window.addEventListener('touchend', handlePointerUp)
 
     return () => {
+      if (timerEl) {
+        timerEl.removeEventListener('mousedown', handlePointerDown)
+        timerEl.removeEventListener('touchstart', handlePointerDown)
+      }
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('mouseup', handlePointerUp)
+      window.removeEventListener('touchend', handlePointerUp)
     }
   }, [view, timerState, startTimer, stopTimer])
 
@@ -926,13 +962,13 @@ export default function AlgPractice() {
           {showAlg && <p className="alg-text">{selectedCase.alg}</p>}
         </div>
 
-        <div className={`timer ${timerState}`}>
+        <div ref={timerRef} className={`timer ${timerState}`}>
           <span className="time">{formatTime(displayTime)}</span>
           <span className="hint">
-            {timerState === 'idle' && 'Hold space to start'}
+            {timerState === 'idle' && 'Hold to start'}
             {timerState === 'holding' && 'Hold...'}
             {timerState === 'ready' && 'Release to start'}
-            {timerState === 'running' && 'Press space to stop'}
+            {timerState === 'running' && 'Tap to stop'}
           </span>
         </div>
 

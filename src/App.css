@@ -312,6 +312,10 @@ main {
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.05);
   transition: background-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  cursor: pointer;
 }
 
 .timer.holding {

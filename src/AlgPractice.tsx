@@ -1,15 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AlgCase, AlgSet, AlgSetSection } from './algs/oll'
-import OllDiagram from './OllDiagram'
+import CubeDiagram from './CubeDiagram'
+import { formatTime } from './utils/formatTime'
+import { loadFromStorage, saveToStorage } from './utils/storage'
+import { reorderArray } from './utils/arrayUtils'
+import { createDragClone } from './utils/touchDrag'
+import { useTimer } from './hooks/useTimer'
+import type { SolveTime } from './types'
 
 type View = 'sets' | 'cases' | 'practice'
-type TimerState = 'idle' | 'holding' | 'ready' | 'running'
-
-interface SolveTime {
-  id: number
-  time: number
-  date: string
-}
 
 const PRESETS = [
   { name: 'OLL', path: '/presets/oll.json' },
@@ -23,16 +22,11 @@ const ALGSET_ICONS = [
 const CUSTOM_SETS_KEY = 'scrambl-custom-algsets'
 
 function loadCustomSets(): AlgSet[] {
-  try {
-    const stored = localStorage.getItem(CUSTOM_SETS_KEY)
-    return stored ? JSON.parse(stored) : []
-  } catch {
-    return []
-  }
+  return loadFromStorage<AlgSet[]>(CUSTOM_SETS_KEY, [])
 }
 
 function saveCustomSets(sets: AlgSet[]): void {
-  localStorage.setItem(CUSTOM_SETS_KEY, JSON.stringify(sets))
+  saveToStorage(CUSTOM_SETS_KEY, sets)
 }
 
 const PAINT_COLORS = [
@@ -45,35 +39,16 @@ const PAINT_COLORS = [
   { value: 6, color: '#ffffff', label: 'White' },
 ]
 
-function initSets(): AlgSet[] {
-  return loadCustomSets()
-}
-
-function storageKey(caseId: string): string {
+function timesKey(caseId: string): string {
   return `scrambl-alg-times-${caseId}`
 }
 
 function loadTimes(caseId: string): SolveTime[] {
-  try {
-    const stored = localStorage.getItem(storageKey(caseId))
-    return stored ? JSON.parse(stored) : []
-  } catch {
-    return []
-  }
+  return loadFromStorage<SolveTime[]>(timesKey(caseId), [])
 }
 
 function saveTimes(caseId: string, times: SolveTime[]): void {
-  localStorage.setItem(storageKey(caseId), JSON.stringify(times))
-}
-
-function formatTime(ms: number): string {
-  const totalSeconds = ms / 1000
-  if (totalSeconds < 60) {
-    return totalSeconds.toFixed(2)
-  }
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = (totalSeconds % 60).toFixed(2).padStart(5, '0')
-  return `${minutes}:${seconds}`
+  saveToStorage(timesKey(caseId), times)
 }
 
 function randomCase(set: AlgSet, exclude?: AlgCase): AlgCase {
@@ -96,7 +71,7 @@ function loadSections(set: AlgSet): AlgSetSection[] {
 }
 
 function saveSections(setId: string, sections: AlgSetSection[]): void {
-  localStorage.setItem(sectionsKey(setId), JSON.stringify(sections))
+  saveToStorage(sectionsKey(setId), sections)
 }
 
 function getUnsortedIds(set: AlgSet, sections: AlgSetSection[]): string[] {
@@ -114,14 +89,11 @@ interface SetSection {
 const SET_SECTIONS_KEY = 'scrambl-set-sections'
 
 function loadSetSections(): SetSection[] {
-  try {
-    const stored = localStorage.getItem(SET_SECTIONS_KEY)
-    return stored ? JSON.parse(stored) : []
-  } catch { return [] }
+  return loadFromStorage<SetSection[]>(SET_SECTIONS_KEY, [])
 }
 
 function saveSetSections(secs: SetSection[]): void {
-  localStorage.setItem(SET_SECTIONS_KEY, JSON.stringify(secs))
+  saveToStorage(SET_SECTIONS_KEY, secs)
 }
 
 function getUnsortedSetIds(sets: AlgSet[], secs: SetSection[]): string[] {
@@ -129,12 +101,62 @@ function getUnsortedSetIds(sets: AlgSet[], secs: SetSection[]): string[] {
   return sets.map(s => s.id).filter(id => !assigned.has(id))
 }
 
+// --- Touch drag state type ---
+
+interface TouchDragState {
+  type: 'case' | 'section' | 'set'
+  caseId?: string
+  fromSectionId?: string
+  sectionId?: string
+  setId?: string
+  fromSetSectionId?: string
+  startX: number
+  startY: number
+  sourceEl: HTMLElement
+  clone: HTMLElement | null
+  isDragging: boolean
+  dragReady: boolean
+  holdTimer: ReturnType<typeof setTimeout> | null
+  currentTarget: { type: 'case' | 'section' | 'set'; id: string; sectionId?: string } | null
+}
+
+const HOLD_DELAY = 200
+const MOVE_CANCEL_THRESHOLD = 8
+
+function initTouchDrag(
+  ref: React.MutableRefObject<TouchDragState | null>,
+  e: React.TouchEvent,
+  sourceEl: HTMLElement,
+  props: Partial<TouchDragState>,
+): void {
+  if (ref.current) return
+  const touch = e.touches[0]
+  const holdTimer = setTimeout(() => {
+    if (ref.current) {
+      ref.current.dragReady = true
+      sourceEl.classList.add('touch-drag-ready')
+    }
+  }, HOLD_DELAY)
+  ref.current = {
+    type: props.type ?? 'case',
+    ...props,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    sourceEl,
+    clone: null,
+    isDragging: false,
+    dragReady: false,
+    holdTimer,
+    currentTarget: null,
+  }
+}
+
 export default function AlgPractice() {
   const [view, setView] = useState<View>('sets')
   const [selectedSet, setSelectedSet] = useState<AlgSet | null>(null)
   const [selectedCase, setSelectedCase] = useState<AlgCase | null>(null)
   const [showAlg, setShowAlg] = useState(false)
-  const [randomMode, setRandomMode] = useState(false)
+  const [, setRandomMode] = useState(false)
 
   // Edit modal state
   const [editingCase, setEditingCase] = useState<AlgCase | null>(null)
@@ -167,7 +189,7 @@ export default function AlgPractice() {
   const [dragOverSetSection, setDragOverSetSection] = useState<string | null>(null)
 
   // Custom sets
-  const [customSets, setCustomSets] = useState<AlgSet[]>(initSets)
+  const [customSets, setCustomSets] = useState<AlgSet[]>(loadCustomSets)
 
   // Case list view mode
   const [caseViewMode, setCaseViewMode] = useState<'view' | 'edit'>('view')
@@ -180,170 +202,48 @@ export default function AlgPractice() {
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
 
   // Timer state
-  const [timerState, setTimerState] = useState<TimerState>('idle')
-  const [displayTime, setDisplayTime] = useState(0)
   const [solves, setSolves] = useState<SolveTime[]>([])
 
-  const startTimeRef = useRef<number>(0)
-  const animationFrameRef = useRef<number>(0)
-  const holdTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const timerRef = useRef<HTMLDivElement>(null)
-
   // Touch drag and drop refs (for mobile support)
-  const touchDragRef = useRef<{
-    type: 'case' | 'section' | 'set'
-    caseId?: string
-    fromSectionId?: string
-    sectionId?: string
-    setId?: string
-    fromSetSectionId?: string
-    startX: number
-    startY: number
-    sourceEl: HTMLElement
-    clone: HTMLElement | null
-    isDragging: boolean
-    dragReady: boolean
-    holdTimer: ReturnType<typeof setTimeout> | null
-    currentTarget: { type: 'case' | 'section' | 'set'; id: string; sectionId?: string } | null
-  } | null>(null)
+  const touchDragRef = useRef<TouchDragState | null>(null)
   const touchDropHandlerRef = useRef<((target: { type: 'case' | 'section' | 'set'; id: string; sectionId?: string }) => void) | null>(null)
 
-  const updateDisplay = useCallback(() => {
-    if (startTimeRef.current > 0) {
-      setDisplayTime(Date.now() - startTimeRef.current)
-      animationFrameRef.current = requestAnimationFrame(updateDisplay)
+  const handleTimerStop = useCallback((finalTime: number) => {
+    const newSolve: SolveTime = {
+      id: Date.now(),
+      time: finalTime,
+      date: new Date().toISOString()
     }
-  }, [])
-
-  const startTimer = useCallback(() => {
-    startTimeRef.current = Date.now()
-    setTimerState('running')
-    animationFrameRef.current = requestAnimationFrame(updateDisplay)
-  }, [updateDisplay])
-
-  const stopTimer = useCallback(() => {
-    cancelAnimationFrame(animationFrameRef.current)
-    const finalTime = Date.now() - startTimeRef.current
-    setDisplayTime(finalTime)
-    startTimeRef.current = 0
-    setTimerState('idle')
-
-    if (selectedCase) {
-      const newSolve: SolveTime = {
-        id: Date.now(),
-        time: finalTime,
-        date: new Date().toISOString()
-      }
-      if (randomMode && selectedSet) {
-        const prev = loadTimes(selectedCase.id)
-        saveTimes(selectedCase.id, [newSolve, ...prev])
-        const next = randomCase(selectedSet, selectedCase)
-        setSelectedCase(next)
-        setSolves(loadTimes(next.id))
-        setShowAlg(false)
-      } else {
-        setSolves(prev => {
-          const updated = [newSolve, ...prev]
-          saveTimes(selectedCase.id, updated)
-          return updated
+    setSelectedCase(prevCase => {
+      if (!prevCase) return prevCase
+      setRandomMode(prevRandom => {
+        setSelectedSet(prevSet => {
+          if (prevRandom && prevSet) {
+            const prev = loadTimes(prevCase.id)
+            saveTimes(prevCase.id, [newSolve, ...prev])
+            const next = randomCase(prevSet, prevCase)
+            setSelectedCase(next)
+            setSolves(loadTimes(next.id))
+            setShowAlg(false)
+          } else {
+            setSolves(prevSolves => {
+              const updated = [newSolve, ...prevSolves]
+              saveTimes(prevCase.id, updated)
+              return updated
+            })
+          }
+          return prevSet
         })
-      }
-    }
-  }, [selectedCase, randomMode, selectedSet])
-
-  // Prevent spacebar from scrolling the page
-  useEffect(() => {
-    const preventSpaceScroll = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      e.preventDefault()
-    }
-    window.addEventListener('keydown', preventSpaceScroll)
-    return () => window.removeEventListener('keydown', preventSpaceScroll)
+        return prevRandom
+      })
+      return prevCase
+    })
   }, [])
 
-  // Keyboard and touch/mouse handler for practice timer
-  useEffect(() => {
-    if (view !== 'practice') return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return
-      e.preventDefault()
-
-      if (timerState === 'idle') {
-        setTimerState('holding')
-        holdTimeoutRef.current = setTimeout(() => {
-          setTimerState('ready')
-        }, 550)
-      } else if (timerState === 'running') {
-        stopTimer()
-      }
-    }
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return
-      e.preventDefault()
-
-      if (timerState === 'holding') {
-        clearTimeout(holdTimeoutRef.current)
-        setTimerState('idle')
-      } else if (timerState === 'ready') {
-        startTimer()
-      }
-    }
-
-    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      e.preventDefault()
-      if (timerState === 'idle') {
-        setTimerState('holding')
-        holdTimeoutRef.current = setTimeout(() => {
-          setTimerState('ready')
-        }, 550)
-      } else if (timerState === 'running') {
-        stopTimer()
-      }
-    }
-
-    const handlePointerUp = () => {
-      if (timerState === 'holding') {
-        clearTimeout(holdTimeoutRef.current)
-        setTimerState('idle')
-      } else if (timerState === 'ready') {
-        startTimer()
-      }
-    }
-
-    const timerEl = timerRef.current
-    if (timerEl) {
-      timerEl.addEventListener('mousedown', handlePointerDown)
-      timerEl.addEventListener('touchstart', handlePointerDown, { passive: false })
-    }
-
-    window.addEventListener('mouseup', handlePointerUp)
-    window.addEventListener('touchend', handlePointerUp)
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
-
-    return () => {
-      if (timerEl) {
-        timerEl.removeEventListener('mousedown', handlePointerDown)
-        timerEl.removeEventListener('touchstart', handlePointerDown)
-      }
-      window.removeEventListener('mouseup', handlePointerUp)
-      window.removeEventListener('touchend', handlePointerUp)
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
-    }
-  }, [view, timerState, startTimer, stopTimer])
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(animationFrameRef.current)
-      clearTimeout(holdTimeoutRef.current)
-    }
-  }, [])
+  const { timerState, displayTime, timerRef, setDisplayTime, resetTimer } = useTimer({
+    onStop: handleTimerStop,
+    active: view === 'practice',
+  })
 
   // Touch drag and drop for mobile (cases & sections in edit mode)
   useEffect(() => {
@@ -357,8 +257,6 @@ export default function AlgPractice() {
       touchDragRef.current = null
       return
     }
-
-    const MOVE_CANCEL_THRESHOLD = 8
 
     const handleTouchMove = (e: TouchEvent) => {
       const drag = touchDragRef.current
@@ -380,22 +278,7 @@ export default function AlgPractice() {
       // Long press fired but not yet dragging – create clone on first move
       if (drag.dragReady && !drag.isDragging) {
         drag.isDragging = true
-        const rect = drag.sourceEl.getBoundingClientRect()
-        const clone = drag.sourceEl.cloneNode(true) as HTMLElement
-        clone.style.position = 'fixed'
-        clone.style.left = `${rect.left}px`
-        clone.style.top = `${rect.top}px`
-        clone.style.width = `${rect.width}px`
-        clone.style.height = `${rect.height}px`
-        clone.style.opacity = '0.85'
-        clone.style.zIndex = '10000'
-        clone.style.pointerEvents = 'none'
-        clone.style.transition = 'none'
-        clone.style.margin = '0'
-        clone.style.willChange = 'transform'
-        clone.classList.add('touch-drag-clone')
-        document.body.appendChild(clone)
-        drag.clone = clone
+        drag.clone = createDragClone(drag.sourceEl)
         drag.sourceEl.classList.add('touch-drag-source')
       }
 
@@ -474,27 +357,7 @@ export default function AlgPractice() {
       return
     }
 
-    const MOVE_CANCEL_THRESHOLD = 8
     const hasSetSecs = setListSections.length > 0
-
-    const createClone = (sourceEl: HTMLElement) => {
-      const rect = sourceEl.getBoundingClientRect()
-      const clone = sourceEl.cloneNode(true) as HTMLElement
-      clone.style.position = 'fixed'
-      clone.style.left = `${rect.left}px`
-      clone.style.top = `${rect.top}px`
-      clone.style.width = `${rect.width}px`
-      clone.style.height = `${rect.height}px`
-      clone.style.opacity = '0.85'
-      clone.style.zIndex = '10000'
-      clone.style.pointerEvents = 'none'
-      clone.style.transition = 'none'
-      clone.style.margin = '0'
-      clone.style.willChange = 'transform'
-      clone.classList.add('touch-drag-clone')
-      document.body.appendChild(clone)
-      return clone
-    }
 
     const handleTouchMove = (e: TouchEvent) => {
       const drag = touchDragRef.current
@@ -514,7 +377,7 @@ export default function AlgPractice() {
 
       if (drag.dragReady && !drag.isDragging) {
         drag.isDragging = true
-        drag.clone = createClone(drag.sourceEl)
+        drag.clone = createDragClone(drag.sourceEl)
         drag.sourceEl.classList.add('touch-drag-source')
       }
 
@@ -581,18 +444,10 @@ export default function AlgPractice() {
               const targetSecId = drag.currentTarget.sectionId || ''
               if (drag.setId !== targetSetId) {
                 if (fromSecId === '__unsorted-sets' && targetSecId === '__unsorted-sets') {
-                  // Reorder within unsorted (reorder customSets)
-                  const fromIdx = customSets.findIndex(s => s.id === drag.setId)
-                  const toIdx = customSets.findIndex(s => s.id === targetSetId)
-                  if (fromIdx !== -1 && toIdx !== -1) {
-                    const next = [...customSets]
-                    const [moved] = next.splice(fromIdx, 1)
-                    next.splice(toIdx, 0, moved)
-                    saveCustomSets(next)
-                    setCustomSets(next)
-                  }
+                  const next = reorderArray(customSets, customSets.findIndex(s => s.id === drag.setId), customSets.findIndex(s => s.id === targetSetId))
+                  saveCustomSets(next)
+                  setCustomSets(next)
                 } else if (fromSecId === '__unsorted-sets') {
-                  // Move from unsorted into a section
                   const toIdx = setListSections.find(s => s.id === targetSecId)?.setIds.indexOf(targetSetId) ?? -1
                   if (toIdx !== -1) {
                     const next = setListSections.map(s => {
@@ -607,14 +462,12 @@ export default function AlgPractice() {
                     setSetListSections(next)
                   }
                 } else if (targetSecId === '__unsorted-sets') {
-                  // Move from section to unsorted
                   const next = setListSections.map(s =>
                     s.id === fromSecId ? { ...s, setIds: s.setIds.filter(id => id !== drag.setId) } : s
                   )
                   saveSetSections(next)
                   setSetListSections(next)
                 } else {
-                  // Move within/across sections
                   const toIdx = setListSections.find(s => s.id === targetSecId)?.setIds.indexOf(targetSetId) ?? -1
                   if (toIdx !== -1) {
                     const next = setListSections.map(s => {
@@ -632,7 +485,6 @@ export default function AlgPractice() {
                 }
               }
             } else if (drag.currentTarget.type === 'section') {
-              // Drop set onto section header
               const toSecId = drag.currentTarget.id
               if (fromSecId !== toSecId) {
                 const next = setListSections.map(s => {
@@ -650,32 +502,19 @@ export default function AlgPractice() {
               const fromId = drag.setId
               const toId = drag.currentTarget.id
               if (fromId !== toId) {
-                const fromIdx = customSets.findIndex(s => s.id === fromId)
-                const toIdx = customSets.findIndex(s => s.id === toId)
-                if (fromIdx !== -1 && toIdx !== -1) {
-                  const next = [...customSets]
-                  const [moved] = next.splice(fromIdx, 1)
-                  next.splice(toIdx, 0, moved)
-                  saveCustomSets(next)
-                  setCustomSets(next)
-                }
+                const next = reorderArray(customSets, customSets.findIndex(s => s.id === fromId), customSets.findIndex(s => s.id === toId))
+                saveCustomSets(next)
+                setCustomSets(next)
               }
             }
           }
         } else if (drag.type === 'section' && drag.sectionId && drag.currentTarget.type === 'section') {
-          // Reorder set sections
           const fromId = drag.sectionId
           const toId = drag.currentTarget.id
           if (fromId !== toId) {
-            const fromIdx = setListSections.findIndex(s => s.id === fromId)
-            const toIdx = setListSections.findIndex(s => s.id === toId)
-            if (fromIdx !== -1 && toIdx !== -1) {
-              const next = [...setListSections]
-              const [moved] = next.splice(fromIdx, 1)
-              next.splice(toIdx, 0, moved)
-              saveSetSections(next)
-              setSetListSections(next)
-            }
+            const next = reorderArray(setListSections, setListSections.findIndex(s => s.id === fromId), setListSections.findIndex(s => s.id === toId))
+            saveSetSections(next)
+            setSetListSections(next)
           }
         }
       }
@@ -740,7 +579,6 @@ export default function AlgPractice() {
     setSelectedCase(algCase)
     setSolves(loadTimes(algCase.id))
     setDisplayTime(0)
-    setTimerState('idle')
     setShowAlg(false)
     setRandomMode(false)
     setView('practice')
@@ -752,7 +590,6 @@ export default function AlgPractice() {
     setSelectedCase(c)
     setSolves(loadTimes(c.id))
     setDisplayTime(0)
-    setTimerState('idle')
     setShowAlg(false)
     setRandomMode(true)
     setView('practice')
@@ -768,7 +605,6 @@ export default function AlgPractice() {
     setSelectedCase(c)
     setSolves(loadTimes(c.id))
     setDisplayTime(0)
-    setTimerState('idle')
     setShowAlg(false)
     setRandomMode(true)
     setSelectedSet(filteredSet)
@@ -776,10 +612,7 @@ export default function AlgPractice() {
   }
 
   const goBackToCases = () => {
-    setTimerState('idle')
-    cancelAnimationFrame(animationFrameRef.current)
-    clearTimeout(holdTimeoutRef.current)
-    startTimeRef.current = 0
+    resetTimer()
     // Restore the full set if we were practicing a filtered subset
     const fullSet = customSets.find(s => s.id === selectedSet?.id)
     if (fullSet) setSelectedSet(fullSet)
@@ -910,12 +743,7 @@ export default function AlgPractice() {
     setDragOverSetId(null)
     const fromId = e.dataTransfer.getData('application/algset')
     if (!fromId || fromId === toSetId) return
-    const fromIdx = customSets.findIndex(s => s.id === fromId)
-    const toIdx = customSets.findIndex(s => s.id === toSetId)
-    if (fromIdx === -1 || toIdx === -1) return
-    const next = [...customSets]
-    const [moved] = next.splice(fromIdx, 1)
-    next.splice(toIdx, 0, moved)
+    const next = reorderArray(customSets, customSets.findIndex(s => s.id === fromId), customSets.findIndex(s => s.id === toSetId))
     saveCustomSets(next)
     setCustomSets(next)
   }
@@ -944,18 +772,10 @@ export default function AlgPractice() {
       if (setId === targetSetId) return
 
       if (fromSectionId === '__unsorted-sets' && targetSectionId === '__unsorted-sets') {
-        // Reorder within unsorted
-        const fromIdx = customSets.findIndex(s => s.id === setId)
-        const toIdx = customSets.findIndex(s => s.id === targetSetId)
-        if (fromIdx !== -1 && toIdx !== -1) {
-          const next = [...customSets]
-          const [moved] = next.splice(fromIdx, 1)
-          next.splice(toIdx, 0, moved)
-          saveCustomSets(next)
-          setCustomSets(next)
-        }
+        const next = reorderArray(customSets, customSets.findIndex(s => s.id === setId), customSets.findIndex(s => s.id === targetSetId))
+        saveCustomSets(next)
+        setCustomSets(next)
       } else if (fromSectionId === '__unsorted-sets') {
-        // Move from unsorted into section at target position
         const toIdx = setListSections.find(s => s.id === targetSectionId)?.setIds.indexOf(targetSetId) ?? -1
         if (toIdx !== -1) {
           const next = setListSections.map(s => {
@@ -970,14 +790,12 @@ export default function AlgPractice() {
           setSetListSections(next)
         }
       } else if (targetSectionId === '__unsorted-sets') {
-        // Move from section to unsorted
         const next = setListSections.map(s =>
           s.id === fromSectionId ? { ...s, setIds: s.setIds.filter(id => id !== setId) } : s
         )
         saveSetSections(next)
         setSetListSections(next)
       } else {
-        // Move within/across sections
         const toIdx = setListSections.find(s => s.id === targetSectionId)?.setIds.indexOf(targetSetId) ?? -1
         if (toIdx === -1) return
         const next = setListSections.map(s => {
@@ -1018,12 +836,7 @@ export default function AlgPractice() {
       try {
         const { sectionId: fromId } = JSON.parse(sectionData)
         if (fromId === toSectionId) return
-        const fromIdx = setListSections.findIndex(s => s.id === fromId)
-        const toIdx = setListSections.findIndex(s => s.id === toSectionId)
-        if (fromIdx === -1 || toIdx === -1) return
-        const next = [...setListSections]
-        const [moved] = next.splice(fromIdx, 1)
-        next.splice(toIdx, 0, moved)
+        const next = reorderArray(setListSections, setListSections.findIndex(s => s.id === fromId), setListSections.findIndex(s => s.id === toSectionId))
         saveSetSections(next)
         setSetListSections(next)
       } catch { /* ignore */ }
@@ -1114,53 +927,17 @@ export default function AlgPractice() {
     const unsortedSetIds = getUnsortedSetIds(customSets, setListSections)
 
     const handleSetTouchStart = (e: React.TouchEvent, setId: string, sectionId: string) => {
-      if (touchDragRef.current) return
-      const touch = e.touches[0]
-      const sourceEl = e.currentTarget as HTMLElement
-      const holdTimer = setTimeout(() => {
-        if (touchDragRef.current) {
-          touchDragRef.current.dragReady = true
-          sourceEl.classList.add('touch-drag-ready')
-        }
-      }, 200)
-      touchDragRef.current = {
-        type: 'set',
-        setId,
-        fromSetSectionId: sectionId,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        sourceEl,
-        clone: null,
-        isDragging: false,
-        dragReady: false,
-        holdTimer,
-        currentTarget: null,
-      }
+      initTouchDrag(touchDragRef, e, e.currentTarget as HTMLElement, {
+        type: 'set', setId, fromSetSectionId: sectionId,
+      })
     }
 
     const handleSetSectionTouchStart = (e: React.TouchEvent, sectionId: string) => {
-      if (touchDragRef.current) return
       e.stopPropagation()
-      const touch = e.touches[0]
       const sectionEl = (e.currentTarget as HTMLElement).closest('.alg-set-section') as HTMLElement
-      const holdTimer = setTimeout(() => {
-        if (touchDragRef.current) {
-          touchDragRef.current.dragReady = true
-          sectionEl.classList.add('touch-drag-ready')
-        }
-      }, 200)
-      touchDragRef.current = {
-        type: 'section',
-        sectionId,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        sourceEl: sectionEl,
-        clone: null,
-        isDragging: false,
-        dragReady: false,
-        holdTimer,
-        currentTarget: null,
-      }
+      initTouchDrag(touchDragRef, e, sectionEl, {
+        type: 'section', sectionId,
+      })
     }
 
     const renderSetCard = (set: AlgSet, sectionId: string) => {
@@ -1440,12 +1217,7 @@ export default function AlgPractice() {
         try {
           const { sectionId: fromId } = JSON.parse(sectionData)
           if (fromId === toSectionId) return
-          const fromIdx = sections.findIndex(s => s.id === fromId)
-          const toIdx = sections.findIndex(s => s.id === toSectionId)
-          if (fromIdx === -1 || toIdx === -1) return
-          const next = [...sections]
-          const [moved] = next.splice(fromIdx, 1)
-          next.splice(toIdx, 0, moved)
+          const next = reorderArray(sections, sections.findIndex(s => s.id === fromId), sections.findIndex(s => s.id === toSectionId))
           setSections(next)
           saveSections(selectedSet.id, next)
         } catch { /* ignore */ }
@@ -1501,10 +1273,9 @@ export default function AlgPractice() {
           const fromIdx = cases.findIndex(c => c.id === caseId)
           const toIdx = cases.findIndex(c => c.id === targetCaseId)
           if (fromIdx === -1 || toIdx === -1) return
-          const [moved] = cases.splice(fromIdx, 1)
-          cases.splice(toIdx, 0, moved)
+          const reordered = reorderArray(cases, fromIdx, toIdx)
           const updatedSets = customSets.map(s =>
-            s.id === selectedSet.id ? { ...s, cases } : s
+            s.id === selectedSet.id ? { ...s, cases: reordered } : s
           )
           saveCustomSets(updatedSets)
           setCustomSets(updatedSets)
@@ -1544,53 +1315,17 @@ export default function AlgPractice() {
 
     // Touch drag handlers (mobile)
     const handleCaseTouchStart = (e: React.TouchEvent, caseId: string, sectionId: string) => {
-      if (touchDragRef.current) return
-      const touch = e.touches[0]
-      const sourceEl = e.currentTarget as HTMLElement
-      const holdTimer = setTimeout(() => {
-        if (touchDragRef.current) {
-          touchDragRef.current.dragReady = true
-          sourceEl.classList.add('touch-drag-ready')
-        }
-      }, 200)
-      touchDragRef.current = {
-        type: 'case',
-        caseId,
-        fromSectionId: sectionId,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        sourceEl,
-        clone: null,
-        isDragging: false,
-        dragReady: false,
-        holdTimer,
-        currentTarget: null,
-      }
+      initTouchDrag(touchDragRef, e, e.currentTarget as HTMLElement, {
+        type: 'case', caseId, fromSectionId: sectionId,
+      })
     }
 
     const handleSectionTouchStart = (e: React.TouchEvent, sectionId: string) => {
-      if (touchDragRef.current) return
       e.stopPropagation()
-      const touch = e.touches[0]
       const sectionEl = (e.currentTarget as HTMLElement).closest('.alg-section') as HTMLElement
-      const holdTimer = setTimeout(() => {
-        if (touchDragRef.current) {
-          touchDragRef.current.dragReady = true
-          sectionEl.classList.add('touch-drag-ready')
-        }
-      }, 200)
-      touchDragRef.current = {
-        type: 'section',
-        sectionId,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        sourceEl: sectionEl,
-        clone: null,
-        isDragging: false,
-        dragReady: false,
-        holdTimer,
-        currentTarget: null,
-      }
+      initTouchDrag(touchDragRef, e, sectionEl, {
+        type: 'section', sectionId,
+      })
     }
 
     // Touch drop handler (has access to current state via closure)
@@ -1603,12 +1338,7 @@ export default function AlgPractice() {
           const fromId = drag.sectionId
           const toId = target.id
           if (fromId === toId) return
-          const fromIdx = sections.findIndex(s => s.id === fromId)
-          const toIdx = sections.findIndex(s => s.id === toId)
-          if (fromIdx === -1 || toIdx === -1) return
-          const next = [...sections]
-          const [moved] = next.splice(fromIdx, 1)
-          next.splice(toIdx, 0, moved)
+          const next = reorderArray(sections, sections.findIndex(s => s.id === fromId), sections.findIndex(s => s.id === toId))
           setSections(next)
           saveSections(selectedSet.id, next)
         }
@@ -1625,10 +1355,9 @@ export default function AlgPractice() {
             const fromIdx = cases.findIndex(c => c.id === caseId)
             const toIdx = cases.findIndex(c => c.id === targetCaseId)
             if (fromIdx === -1 || toIdx === -1) return
-            const [moved] = cases.splice(fromIdx, 1)
-            cases.splice(toIdx, 0, moved)
+            const reordered = reorderArray(cases, fromIdx, toIdx)
             const updatedSets = customSets.map(s =>
-              s.id === selectedSet.id ? { ...s, cases } : s
+              s.id === selectedSet.id ? { ...s, cases: reordered } : s
             )
             saveCustomSets(updatedSets)
             setCustomSets(updatedSets)
@@ -1721,7 +1450,7 @@ export default function AlgPractice() {
           onTouchStart={isEditMode ? e => handleCaseTouchStart(e, caseId, sectionId) : undefined}
           onClick={() => isEditMode ? openEditModal(c) : toggleCaseSelection(caseId)}
         >
-          <OllDiagram top={c.top} sides={c.sides} size={60} colors={selectedSet.colors} />
+          <CubeDiagram top={c.top} sides={c.sides} size={60} colors={selectedSet.colors} />
           <span className="alg-case-name">{c.name}</span>
         </button>
       )
@@ -1892,7 +1621,7 @@ export default function AlgPractice() {
               </div>
 
               <div className="alg-edit-diagram-row">
-                <OllDiagram
+                <CubeDiagram
                   top={editTop}
                   sides={editSides}
                   size={140}
@@ -1996,7 +1725,7 @@ export default function AlgPractice() {
         <button className="alg-back" onClick={goBackToCases}>&larr; Back to {selectedSet?.name}</button>
 
         <div className="alg-practice-case">
-          <OllDiagram top={selectedCase.top} sides={selectedCase.sides} size={120} colors={selectedSet?.colors} />
+          <CubeDiagram top={selectedCase.top} sides={selectedCase.sides} size={120} colors={selectedSet?.colors} />
           <h2 className="alg-case-title">{selectedCase.name}</h2>
           <button className="alg-reveal-btn" onClick={() => setShowAlg(!showAlg)}>
             {showAlg ? 'Hide Algorithm' : 'Show Algorithm'}

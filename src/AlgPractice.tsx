@@ -127,6 +127,10 @@ export default function AlgPractice() {
   const [selectedPreset, setSelectedPreset] = useState('')
   const [loadingPreset, setLoadingPreset] = useState(false)
 
+  // Set list view mode
+  const [setListMode, setSetListMode] = useState<'view' | 'edit'>('view')
+  const [dragOverSetId, setDragOverSetId] = useState<string | null>(null)
+
   // Custom sets
   const [customSets, setCustomSets] = useState<AlgSet[]>(initSets)
 
@@ -414,6 +418,111 @@ export default function AlgPractice() {
     }
   }, [view, caseViewMode])
 
+  // Touch drag and drop for mobile (set list reorder in edit mode)
+  useEffect(() => {
+    const setsEditing = customSets.length === 0 || setListMode === 'edit'
+    if (view !== 'sets' || !setsEditing) {
+      return
+    }
+
+    const MOVE_CANCEL_THRESHOLD = 8
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const drag = touchDragRef.current
+      if (!drag || drag.type !== 'section') return // reuse 'section' type for set drag
+
+      const touch = e.touches[0]
+      const dx = touch.clientX - drag.startX
+      const dy = touch.clientY - drag.startY
+
+      if (!drag.dragReady && !drag.isDragging) {
+        if (Math.abs(dx) > MOVE_CANCEL_THRESHOLD || Math.abs(dy) > MOVE_CANCEL_THRESHOLD) {
+          if (drag.holdTimer) clearTimeout(drag.holdTimer)
+          touchDragRef.current = null
+        }
+        return
+      }
+
+      if (drag.dragReady && !drag.isDragging) {
+        drag.isDragging = true
+        const rect = drag.sourceEl.getBoundingClientRect()
+        const clone = drag.sourceEl.cloneNode(true) as HTMLElement
+        clone.style.position = 'fixed'
+        clone.style.left = `${rect.left}px`
+        clone.style.top = `${rect.top}px`
+        clone.style.width = `${rect.width}px`
+        clone.style.height = `${rect.height}px`
+        clone.style.opacity = '0.85'
+        clone.style.zIndex = '10000'
+        clone.style.pointerEvents = 'none'
+        clone.style.transition = 'none'
+        clone.style.margin = '0'
+        clone.style.willChange = 'transform'
+        clone.classList.add('touch-drag-clone')
+        document.body.appendChild(clone)
+        drag.clone = clone
+        drag.sourceEl.classList.add('touch-drag-source')
+      }
+
+      e.preventDefault()
+      if (drag.clone) {
+        drag.clone.style.transform = `translate(${dx}px, ${dy}px)`
+      }
+
+      if (drag.clone) drag.clone.style.display = 'none'
+      const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null
+      if (drag.clone) drag.clone.style.display = ''
+
+      if (el) {
+        const setCard = el.closest('[data-set-id]') as HTMLElement | null
+        if (setCard) {
+          const setId = setCard.getAttribute('data-set-id')!
+          drag.currentTarget = { type: 'section', id: setId }
+          setDragOverSetId(setId)
+          return
+        }
+      }
+      drag.currentTarget = null
+      setDragOverSetId(null)
+    }
+
+    const handleTouchEnd = () => {
+      const drag = touchDragRef.current
+      if (!drag || drag.type !== 'section') return
+
+      if (drag.holdTimer) clearTimeout(drag.holdTimer)
+
+      if (drag.isDragging && drag.currentTarget && drag.sectionId) {
+        const fromId = drag.sectionId
+        const toId = drag.currentTarget.id
+        if (fromId !== toId) {
+          const fromIdx = customSets.findIndex(s => s.id === fromId)
+          const toIdx = customSets.findIndex(s => s.id === toId)
+          if (fromIdx !== -1 && toIdx !== -1) {
+            const next = [...customSets]
+            const [moved] = next.splice(fromIdx, 1)
+            next.splice(toIdx, 0, moved)
+            saveCustomSets(next)
+            setCustomSets(next)
+          }
+        }
+      }
+
+      if (drag.clone) drag.clone.remove()
+      if (drag.sourceEl) drag.sourceEl.classList.remove('touch-drag-source', 'touch-drag-ready')
+      touchDragRef.current = null
+      setDragOverSetId(null)
+    }
+
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+    window.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [view, setListMode, customSets])
+
   const openSet = (set: AlgSet) => {
     setSelectedSet(set)
     setSections(loadSections(set))
@@ -601,6 +710,43 @@ export default function AlgPractice() {
     setCustomSets(updated)
   }
 
+  // Set list drag-and-drop reorder
+  const handleSetDragStart = (e: React.DragEvent, setId: string) => {
+    e.dataTransfer.setData('application/algset', setId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleSetDragOver = (e: React.DragEvent, setId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverSetId(setId)
+  }
+
+  const handleSetDragLeave = (e: React.DragEvent, setId: string) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      if (dragOverSetId === setId) setDragOverSetId(null)
+    }
+  }
+
+  const handleSetDrop = (e: React.DragEvent, toSetId: string) => {
+    e.preventDefault()
+    setDragOverSetId(null)
+    const fromId = e.dataTransfer.getData('application/algset')
+    if (!fromId || fromId === toSetId) return
+    const fromIdx = customSets.findIndex(s => s.id === fromId)
+    const toIdx = customSets.findIndex(s => s.id === toSetId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const next = [...customSets]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    saveCustomSets(next)
+    setCustomSets(next)
+  }
+
+  const handleSetDragEnd = () => {
+    setDragOverSetId(null)
+  }
+
   const deleteCase = () => {
     if (!editingCase || !selectedSet) return
     const updatedSets = customSets.map(s => {
@@ -637,27 +783,79 @@ export default function AlgPractice() {
 
   // --- Set list view ---
   if (view === 'sets') {
+    const setsEditing = customSets.length === 0 || setListMode === 'edit'
+
     return (
       <div className="alg-practice">
+        <div className="alg-set-list-header">
+          {customSets.length > 0 && (
+            <button
+              className="alg-mode-toggle"
+              onClick={() => setSetListMode(m => m === 'view' ? 'edit' : 'view')}
+            >
+              {setsEditing ? 'Done' : 'Edit'}
+            </button>
+          )}
+        </div>
+
         {customSets.length === 0 && (
           <p className="alg-empty-message">No algorithm sets yet! Try adding one.</p>
         )}
+
         <div className="alg-sets">
           {customSets.map(set => (
-            <button key={set.id} className="alg-set-card" onClick={() => openSet(set)}>
+            <button
+              key={set.id}
+              data-set-id={setsEditing ? set.id : undefined}
+              className={`alg-set-card ${setsEditing && dragOverSetId === set.id ? 'drag-over' : ''}`}
+              onClick={() => openSet(set)}
+              draggable={setsEditing}
+              onDragStart={setsEditing ? e => handleSetDragStart(e, set.id) : undefined}
+              onDragOver={setsEditing ? e => handleSetDragOver(e, set.id) : undefined}
+              onDragLeave={setsEditing ? e => handleSetDragLeave(e, set.id) : undefined}
+              onDrop={setsEditing ? e => handleSetDrop(e, set.id) : undefined}
+              onDragEnd={setsEditing ? handleSetDragEnd : undefined}
+              onTouchStart={setsEditing ? e => {
+                if (touchDragRef.current) return
+                const touch = e.touches[0]
+                const sourceEl = e.currentTarget as HTMLElement
+                const holdTimer = setTimeout(() => {
+                  if (touchDragRef.current) {
+                    touchDragRef.current.dragReady = true
+                    sourceEl.classList.add('touch-drag-ready')
+                  }
+                }, 200)
+                touchDragRef.current = {
+                  type: 'section',
+                  sectionId: set.id,
+                  startX: touch.clientX,
+                  startY: touch.clientY,
+                  sourceEl,
+                  clone: null,
+                  isDragging: false,
+                  dragReady: false,
+                  holdTimer,
+                  currentTarget: null,
+                }
+              } : undefined}
+            >
               <span className="alg-set-name">{set.name}</span>
               <span className="alg-set-count">{set.cases.length} cases</span>
-              <span className="alg-set-actions">
-                <span className="alg-set-action" onClick={e => exportSet(e, set)} title="Export">&#8615;</span>
-                <span className="alg-set-action" onClick={e => duplicateSet(e, set)} title="Duplicate">&#9776;</span>
-                <span className="alg-set-action alg-set-action-delete" onClick={e => deleteCustomSet(e, set.id)} title="Delete">&times;</span>
-              </span>
+              {setsEditing && (
+                <span className="alg-set-actions">
+                  <span className="alg-set-action" onClick={e => exportSet(e, set)} title="Export">&#8615;</span>
+                  <span className="alg-set-action" onClick={e => duplicateSet(e, set)} title="Duplicate">&#9776;</span>
+                  <span className="alg-set-action alg-set-action-delete" onClick={e => deleteCustomSet(e, set.id)} title="Delete">&times;</span>
+                </span>
+              )}
             </button>
           ))}
-          <button className="alg-new-set-card" onClick={() => setShowNewSetModal(true)}>
-            <span className="alg-set-name">+</span>
-            <span className="alg-set-count">New Set</span>
-          </button>
+          {setsEditing && (
+            <button className="alg-new-set-card" onClick={() => setShowNewSetModal(true)}>
+              <span className="alg-set-name">+</span>
+              <span className="alg-set-count">New Set</span>
+            </button>
+          )}
         </div>
 
         {showNewSetModal && (

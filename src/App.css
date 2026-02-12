@@ -848,6 +848,23 @@ main {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Set sections (set list grouping) */
+.alg-set-section {
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.alg-set-section.drag-over {
+  border-color: rgba(234, 179, 8, 0.5);
+  background: rgba(234, 179, 8, 0.05);
+}
+
+.alg-set-section .alg-sets {
+  padding: 0.5rem 0;
+}
+
 /* Sections */
 .alg-section {
   padding: 0.75rem;

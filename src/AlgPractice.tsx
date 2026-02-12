@@ -550,6 +550,50 @@ export default function AlgPractice() {
     }
   }
 
+  const exportSet = (e: React.MouseEvent, set: AlgSet) => {
+    e.stopPropagation()
+    const secs = loadSections(set)
+    const data: AlgSet = { ...set, ...(secs.length > 0 ? { sections: secs } : {}) }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${set.name.toLowerCase().replace(/\s+/g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const duplicateSet = (e: React.MouseEvent, set: AlgSet) => {
+    e.stopPropagation()
+    const id = `copy-${Date.now()}`
+    const copy: AlgSet = { ...set, id, name: `${set.name} (copy)` }
+    const updated = [...customSets, copy]
+    saveCustomSets(updated)
+    setCustomSets(updated)
+    // Copy sections too
+    const secs = loadSections(set)
+    if (secs.length > 0) saveSections(id, secs)
+  }
+
+  const importFromFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const preset: AlgSet = JSON.parse(reader.result as string)
+        if (!preset.cases || !Array.isArray(preset.cases)) return
+        const id = `import-${Date.now()}`
+        const newSet: AlgSet = { ...preset, id }
+        const updated = [...customSets, newSet]
+        saveCustomSets(updated)
+        setCustomSets(updated)
+        if (preset.sections) saveSections(id, preset.sections)
+        setShowNewSetModal(false)
+        openSet(newSet)
+      } catch { /* ignore bad files */ }
+    }
+    reader.readAsText(file)
+  }
+
   const deleteCustomSet = (e: React.MouseEvent, setId: string) => {
     e.stopPropagation()
     const updated = customSets.filter(s => s.id !== setId)
@@ -603,7 +647,11 @@ export default function AlgPractice() {
             <button key={set.id} className="alg-set-card" onClick={() => openSet(set)}>
               <span className="alg-set-name">{set.name}</span>
               <span className="alg-set-count">{set.cases.length} cases</span>
-              <span className="alg-set-delete" onClick={e => deleteCustomSet(e, set.id)}>&times;</span>
+              <span className="alg-set-actions">
+                <span className="alg-set-action" onClick={e => exportSet(e, set)} title="Export">&#8615;</span>
+                <span className="alg-set-action" onClick={e => duplicateSet(e, set)} title="Duplicate">&#9776;</span>
+                <span className="alg-set-action alg-set-action-delete" onClick={e => deleteCustomSet(e, set.id)} title="Delete">&times;</span>
+              </span>
             </button>
           ))}
           <button className="alg-new-set-card" onClick={() => setShowNewSetModal(true)}>
@@ -643,6 +691,22 @@ export default function AlgPractice() {
                   {loadingPreset ? 'Loading...' : 'Create'}
                 </button>
               </div>
+
+              <div className="alg-new-set-divider">or import a file</div>
+
+              <label className="alg-new-set-option alg-import-label">
+                <span className="alg-new-set-option-name">Import JSON</span>
+                <span className="alg-new-set-option-desc">Load from an exported file</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  hidden
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) importFromFile(file)
+                  }}
+                />
+              </label>
 
               <button className="modal-close" onClick={() => { setShowNewSetModal(false); setSelectedPreset('') }}>Close</button>
             </div>

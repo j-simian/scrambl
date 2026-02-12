@@ -978,15 +978,28 @@ main {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
-.alg-set-delete {
-  font-size: 0.875rem;
-  opacity: 0.4;
-  transition: opacity 0.15s, color 0.15s;
+.alg-set-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
-.alg-set-delete:hover {
+.alg-set-action {
+  font-size: 0.875rem;
+  opacity: 0.3;
+  transition: opacity 0.15s, color 0.15s;
+  padding: 0 0.15rem;
+}
+
+.alg-set-action:hover {
   opacity: 1;
+}
+
+.alg-set-action-delete:hover {
   color: #ef4444;
+}
+
+.alg-import-label {
+  cursor: pointer;
 }
 
 .alg-clear-selection-btn {

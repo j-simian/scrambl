@@ -307,22 +307,22 @@ export default function AlgPractice() {
     if (timerEl) {
       timerEl.addEventListener('mousedown', handlePointerDown)
       timerEl.addEventListener('touchstart', handlePointerDown, { passive: false })
+      timerEl.addEventListener('mouseup', handlePointerUp)
+      timerEl.addEventListener('touchend', handlePointerUp)
     }
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
-    window.addEventListener('mouseup', handlePointerUp)
-    window.addEventListener('touchend', handlePointerUp)
 
     return () => {
       if (timerEl) {
         timerEl.removeEventListener('mousedown', handlePointerDown)
         timerEl.removeEventListener('touchstart', handlePointerDown)
+        timerEl.removeEventListener('mouseup', handlePointerUp)
+        timerEl.removeEventListener('touchend', handlePointerUp)
       }
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
-      window.removeEventListener('mouseup', handlePointerUp)
-      window.removeEventListener('touchend', handlePointerUp)
     }
   }, [view, timerState, startTimer, stopTimer])
 

@@ -781,6 +781,21 @@ main {
   cursor: grabbing;
 }
 
+/* Touch drag and drop (mobile) */
+.touch-drag-clone {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-radius: 0.5rem;
+}
+
+.touch-drag-ready {
+  opacity: 0.6;
+  transform: scale(1.03);
+}
+
+.touch-drag-source {
+  opacity: 0.3;
+}
+
 .alg-section-name {
   font-size: 0.9rem;
   font-weight: 600;

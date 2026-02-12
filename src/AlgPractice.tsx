@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { OLL_SET } from './algs/oll'
-import { PLL_SET } from './algs/pll'
 import type { AlgCase, AlgSet, AlgSetSection } from './algs/oll'
 import OllDiagram from './OllDiagram'
 
@@ -13,14 +11,10 @@ interface SolveTime {
   date: string
 }
 
-interface CaseOverride {
-  name?: string
-  alg?: string
-  top?: number[]
-  sides?: number[]
-}
-
-const ALG_SETS: AlgSet[] = [OLL_SET, PLL_SET]
+const PRESETS = [
+  { name: 'OLL', description: '57 cases', path: '/presets/oll.json' },
+  { name: 'PLL', description: '21 cases', path: '/presets/pll.json' },
+]
 
 const CUSTOM_SETS_KEY = 'scrambl-custom-algsets'
 
@@ -47,50 +41,8 @@ const PAINT_COLORS = [
   { value: 6, color: '#ffffff', label: 'White' },
 ]
 
-function overrideKey(caseId: string): string {
-  return `scrambl-alg-override-${caseId}`
-}
-
-function loadOverride(caseId: string): CaseOverride | null {
-  try {
-    const stored = localStorage.getItem(overrideKey(caseId))
-    return stored ? JSON.parse(stored) : null
-  } catch {
-    return null
-  }
-}
-
-function applyOverride(c: AlgCase): AlgCase {
-  const o = loadOverride(c.id)
-  if (!o) return c
-  return {
-    ...c,
-    name: o.name ?? c.name,
-    alg: o.alg ?? c.alg,
-    top: o.top ?? c.top,
-    sides: o.sides ?? c.sides,
-  }
-}
-
 function initSets(): AlgSet[] {
-  const stored = loadCustomSets()
-  const ids = new Set(stored.map(s => s.id))
-  let needsSave = false
-  const result = [...stored]
-  // Seed built-in sets if not yet present, applying any existing overrides
-  for (const builtIn of [...ALG_SETS].reverse()) {
-    if (!ids.has(builtIn.id)) {
-      const cases = builtIn.cases.map(c => {
-        const merged = applyOverride(c)
-        localStorage.removeItem(overrideKey(c.id))
-        return merged
-      })
-      result.unshift({ ...builtIn, cases })
-      needsSave = true
-    }
-  }
-  if (needsSave) saveCustomSets(result)
-  return result
+  return loadCustomSets()
 }
 
 function storageKey(caseId: string): string {
@@ -169,6 +121,11 @@ export default function AlgPractice() {
   const [editSetColors, setEditSetColors] = useState(false)
   // Force re-render of case grid after saving
   const [overrideVersion, setOverrideVersion] = useState(0)
+
+  // New set modal state
+  const [showNewSetModal, setShowNewSetModal] = useState(false)
+  const [selectedPreset, setSelectedPreset] = useState('')
+  const [loadingPreset, setLoadingPreset] = useState(false)
 
   // Custom sets
   const [customSets, setCustomSets] = useState<AlgSet[]>(initSets)
@@ -565,13 +522,32 @@ export default function AlgPractice() {
     ? Math.min(...solves.map(s => s.time))
     : null
 
-  const createCustomSet = () => {
+  const createBlankSet = () => {
     const id = `custom-${Date.now()}`
     const newSet: AlgSet = { id, name: 'New Set', cases: [], colors: true }
     const updated = [...customSets, newSet]
     saveCustomSets(updated)
     setCustomSets(updated)
+    setShowNewSetModal(false)
     openSet(newSet)
+  }
+
+  const createFromPreset = async (presetPath: string) => {
+    setLoadingPreset(true)
+    try {
+      const resp = await fetch(presetPath)
+      const preset: AlgSet = await resp.json()
+      const id = `preset-${Date.now()}`
+      const newSet: AlgSet = { ...preset, id }
+      const updated = [...customSets, newSet]
+      saveCustomSets(updated)
+      setCustomSets(updated)
+      setShowNewSetModal(false)
+      setSelectedPreset('')
+      openSet(newSet)
+    } finally {
+      setLoadingPreset(false)
+    }
   }
 
   const deleteCustomSet = (e: React.MouseEvent, setId: string) => {
@@ -619,6 +595,9 @@ export default function AlgPractice() {
   if (view === 'sets') {
     return (
       <div className="alg-practice">
+        {customSets.length === 0 && (
+          <p className="alg-empty-message">No algorithm sets yet! Try adding one.</p>
+        )}
         <div className="alg-sets">
           {customSets.map(set => (
             <button key={set.id} className="alg-set-card" onClick={() => openSet(set)}>
@@ -627,11 +606,48 @@ export default function AlgPractice() {
               <span className="alg-set-delete" onClick={e => deleteCustomSet(e, set.id)}>&times;</span>
             </button>
           ))}
-          <button className="alg-new-set-card" onClick={createCustomSet}>
+          <button className="alg-new-set-card" onClick={() => setShowNewSetModal(true)}>
             <span className="alg-set-name">+</span>
             <span className="alg-set-count">New Set</span>
           </button>
         </div>
+
+        {showNewSetModal && (
+          <div className="modal-overlay" onClick={() => { setShowNewSetModal(false); setSelectedPreset('') }}>
+            <div className="modal alg-new-set-modal" onClick={e => e.stopPropagation()}>
+              <h3>New Algorithm Set</h3>
+
+              <button className="alg-new-set-option" onClick={createBlankSet}>
+                <span className="alg-new-set-option-name">Blank Set</span>
+                <span className="alg-new-set-option-desc">Start from scratch</span>
+              </button>
+
+              <div className="alg-new-set-divider">or from a preset</div>
+
+              <div className="alg-preset-picker">
+                <select
+                  className="alg-preset-select"
+                  value={selectedPreset}
+                  onChange={e => setSelectedPreset(e.target.value)}
+                >
+                  <option value="">Select a preset...</option>
+                  {PRESETS.map(p => (
+                    <option key={p.path} value={p.path}>{p.name} ({p.description})</option>
+                  ))}
+                </select>
+                <button
+                  className="alg-preset-create"
+                  disabled={!selectedPreset || loadingPreset}
+                  onClick={() => selectedPreset && createFromPreset(selectedPreset)}
+                >
+                  {loadingPreset ? 'Loading...' : 'Create'}
+                </button>
+              </div>
+
+              <button className="modal-close" onClick={() => { setShowNewSetModal(false); setSelectedPreset('') }}>Close</button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

@@ -12,8 +12,8 @@ interface SolveTime {
 }
 
 const PRESETS = [
-  { name: 'OLL', description: '57 cases', path: '/presets/oll.json' },
-  { name: 'PLL', description: '21 cases', path: '/presets/pll.json' },
+  { name: 'OLL', path: '/presets/oll.json' },
+  { name: 'PLL', path: '/presets/pll.json' },
 ]
 
 const CUSTOM_SETS_KEY = 'scrambl-custom-algsets'
@@ -632,7 +632,7 @@ export default function AlgPractice() {
                 >
                   <option value="">Select a preset...</option>
                   {PRESETS.map(p => (
-                    <option key={p.path} value={p.path}>{p.name} ({p.description})</option>
+                    <option key={p.path} value={p.path}>{p.name}</option>
                   ))}
                 </select>
                 <button

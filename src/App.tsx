@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
 import './App.css'
 import AlgPractice from './AlgPractice'
-
-type TimerState = 'idle' | 'holding' | 'ready' | 'running'
+import { formatTime } from './utils/formatTime'
+import { loadFromStorage, saveToStorage } from './utils/storage'
+import { useTimer } from './hooks/useTimer'
+import type { SolveTime, Penalty } from './types'
 
 interface FaceConfig {
   face: string
@@ -172,15 +174,6 @@ function generateScramble(event: EventConfig): string {
   return moves.join(' ')
 }
 
-type Penalty = 'none' | '+2' | 'dnf'
-
-interface SolveTime {
-  id: number
-  time: number
-  date: string
-  penalty?: Penalty
-}
-
 function effectiveTime(solve: SolveTime): number {
   if (solve.penalty === 'dnf') return Infinity
   if (solve.penalty === '+2') return solve.time + 2000
@@ -208,16 +201,6 @@ function trimmedMean(times: number[]): number {
   return middle.reduce((sum, t) => sum + t, 0) / middle.length
 }
 
-function formatTime(ms: number): string {
-  const totalSeconds = ms / 1000
-  if (totalSeconds < 60) {
-    return totalSeconds.toFixed(2)
-  }
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = (totalSeconds % 60).toFixed(2).padStart(5, '0')
-  return `${minutes}:${seconds}`
-}
-
 function migrateOldData(): void {
   const old = localStorage.getItem('cubetimer-solves')
   if (old !== null) {
@@ -229,16 +212,11 @@ function migrateOldData(): void {
 }
 
 function loadTimes(eventId: string): SolveTime[] {
-  try {
-    const stored = localStorage.getItem(storageKey(eventId))
-    return stored ? JSON.parse(stored) : []
-  } catch {
-    return []
-  }
+  return loadFromStorage<SolveTime[]>(storageKey(eventId), [])
 }
 
 function saveTimes(eventId: string, times: SolveTime[]): void {
-  localStorage.setItem(storageKey(eventId), JSON.stringify(times))
+  saveToStorage(storageKey(eventId), times)
 }
 
 migrateOldData()
@@ -250,39 +228,16 @@ type Page = 'timer' | 'algs'
 function App() {
   const [page, setPage] = useState<Page>('timer')
   const [currentEvent, setCurrentEvent] = useState<EventConfig>(DEFAULT_EVENT)
-  const [timerState, setTimerState] = useState<TimerState>('idle')
-  const [displayTime, setDisplayTime] = useState(0)
   const [solves, setSolves] = useState<SolveTime[]>(() => loadTimes(DEFAULT_EVENT.id))
   const [scramble, setScramble] = useState(() => generateScramble(DEFAULT_EVENT))
 
   const [editingSolve, setEditingSolve] = useState<SolveTime | null>(null)
   const [editTimeInput, setEditTimeInput] = useState('')
 
-  const startTimeRef = useRef<number>(0)
-  const animationFrameRef = useRef<number>(0)
-  const holdTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const timerRef = useRef<HTMLDivElement>(null)
+  const currentEventRef = useCallback(() => currentEvent, [currentEvent])
 
-  const updateDisplay = useCallback(() => {
-    if (startTimeRef.current > 0) {
-      setDisplayTime(Date.now() - startTimeRef.current)
-      animationFrameRef.current = requestAnimationFrame(updateDisplay)
-    }
-  }, [])
-
-  const startTimer = useCallback(() => {
-    startTimeRef.current = Date.now()
-    setTimerState('running')
-    animationFrameRef.current = requestAnimationFrame(updateDisplay)
-  }, [updateDisplay])
-
-  const stopTimer = useCallback(() => {
-    cancelAnimationFrame(animationFrameRef.current)
-    const finalTime = Date.now() - startTimeRef.current
-    setDisplayTime(finalTime)
-    startTimeRef.current = 0
-    setTimerState('idle')
-
+  const handleTimerStop = useCallback((finalTime: number) => {
+    const event = currentEventRef()
     const newSolve: SolveTime = {
       id: Date.now(),
       time: finalTime,
@@ -290,11 +245,16 @@ function App() {
     }
     setSolves(prev => {
       const updated = [newSolve, ...prev]
-      saveTimes(currentEvent.id, updated)
+      saveTimes(event.id, updated)
       return updated
     })
-    setScramble(generateScramble(currentEvent))
-  }, [currentEvent])
+    setScramble(generateScramble(event))
+  }, [currentEventRef])
+
+  const { timerState, displayTime, setDisplayTime, timerRef } = useTimer({
+    onStop: handleTimerStop,
+    active: page === 'timer',
+  })
 
   const deleteSolve = (id: number) => {
     setSolves(prev => {
@@ -316,7 +276,6 @@ function App() {
     setSolves(loadTimes(event.id))
     setScramble(generateScramble(event))
     setDisplayTime(0)
-    setTimerState('idle')
   }
 
   const updateSolve = (id: number, patch: Partial<SolveTime>) => {
@@ -347,98 +306,12 @@ function App() {
     setEditingSolve(null)
   }
 
-  // Prevent spacebar from scrolling the page
-  useEffect(() => {
-    const preventSpaceScroll = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      e.preventDefault()
-    }
-    window.addEventListener('keydown', preventSpaceScroll)
-    return () => window.removeEventListener('keydown', preventSpaceScroll)
-  }, [])
-
-  useEffect(() => {
-    if (page !== 'timer') return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return
-      e.preventDefault()
-
-      if (timerState === 'idle') {
-        setTimerState('holding')
-        holdTimeoutRef.current = setTimeout(() => {
-          setTimerState('ready')
-        }, 550)
-      } else if (timerState === 'running') {
-        stopTimer()
-      }
-    }
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return
-      e.preventDefault()
-
-      if (timerState === 'holding') {
-        clearTimeout(holdTimeoutRef.current)
-        setTimerState('idle')
-      } else if (timerState === 'ready') {
-        startTimer()
-      }
-    }
-
-    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      e.preventDefault()
-      if (timerState === 'idle') {
-        setTimerState('holding')
-        holdTimeoutRef.current = setTimeout(() => {
-          setTimerState('ready')
-        }, 550)
-      } else if (timerState === 'running') {
-        stopTimer()
-      }
-    }
-
-    const handlePointerUp = () => {
-      if (timerState === 'holding') {
-        clearTimeout(holdTimeoutRef.current)
-        setTimerState('idle')
-      } else if (timerState === 'ready') {
-        startTimer()
-      }
-    }
-
-    const timerEl = timerRef.current
-    if (timerEl) {
-      timerEl.addEventListener('mousedown', handlePointerDown)
-      timerEl.addEventListener('touchstart', handlePointerDown, { passive: false })
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
-    window.addEventListener('mouseup', handlePointerUp)
-    window.addEventListener('touchend', handlePointerUp)
-
-    return () => {
-      if (timerEl) {
-        timerEl.removeEventListener('mousedown', handlePointerDown)
-        timerEl.removeEventListener('touchstart', handlePointerDown)
-      }
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
-      window.removeEventListener('mouseup', handlePointerUp)
-      window.removeEventListener('touchend', handlePointerUp)
-    }
-  }, [page, timerState, startTimer, stopTimer])
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(animationFrameRef.current)
-      clearTimeout(holdTimeoutRef.current)
-    }
-  }, [])
+  const togglePenalty = (penalty: Penalty) => {
+    if (!editingSolve) return
+    const newPenalty = editingSolve.penalty === penalty ? 'none' : penalty
+    updateSolve(editingSolve.id, { penalty: newPenalty })
+    setEditingSolve({ ...editingSolve, penalty: newPenalty })
+  }
 
   // Calculate stats
   const validTimes = solves.map(effectiveTime).filter(t => t !== Infinity)
@@ -539,19 +412,11 @@ function App() {
               <div className="modal-penalties">
                 <button
                   className={`penalty-btn ${editingSolve.penalty === 'dnf' ? 'active' : ''}`}
-                  onClick={() => {
-                    const newPenalty = editingSolve.penalty === 'dnf' ? 'none' : 'dnf'
-                    updateSolve(editingSolve.id, { penalty: newPenalty })
-                    setEditingSolve({ ...editingSolve, penalty: newPenalty })
-                  }}
+                  onClick={() => togglePenalty('dnf')}
                 >DNF</button>
                 <button
                   className={`penalty-btn ${editingSolve.penalty === '+2' ? 'active' : ''}`}
-                  onClick={() => {
-                    const newPenalty = editingSolve.penalty === '+2' ? 'none' : '+2'
-                    updateSolve(editingSolve.id, { penalty: newPenalty })
-                    setEditingSolve({ ...editingSolve, penalty: newPenalty })
-                  }}
+                  onClick={() => togglePenalty('+2')}
                 >+2</button>
               </div>
               <form className="modal-edit-time" onSubmit={e => { e.preventDefault(); applyEditTime() }}>

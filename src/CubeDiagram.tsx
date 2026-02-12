@@ -1,4 +1,4 @@
-interface OllDiagramProps {
+interface CubeDiagramProps {
   top: number[]      // 9 values
   sides?: number[]   // 12 values: T(L,C,R), R(T,C,B), B(R,C,L), L(B,C,T)
   size?: number
@@ -31,7 +31,7 @@ function sideColor(value: number, colorMode: boolean): string {
   return (value === 0 ? DARK : PALETTE[value]) ?? DARK
 }
 
-export default function OllDiagram({ top, sides, size = 80, colors = false, onToggleTop, onToggleSide }: OllDiagramProps) {
+export default function CubeDiagram({ top, sides, size = 80, colors = false, onToggleTop, onToggleSide }: CubeDiagramProps) {
   const padding = size * 0.15
   const gridSize = size - padding * 2
   const cell = gridSize / 3

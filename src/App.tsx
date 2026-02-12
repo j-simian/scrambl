@@ -347,6 +347,18 @@ function App() {
     setEditingSolve(null)
   }
 
+  // Prevent spacebar from scrolling the page
+  useEffect(() => {
+    const preventSpaceScroll = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', preventSpaceScroll)
+    return () => window.removeEventListener('keydown', preventSpaceScroll)
+  }, [])
+
   useEffect(() => {
     if (page !== 'timer') return
 

@@ -18,4 +18,5 @@ export interface AlgSet {
   cases: AlgCase[]
   colors?: boolean  // true = stickers use multi-color values (0–5), false/undefined = binary yellow/gray
   sections?: AlgSetSection[]
+  icon?: string     // path to icon image
 }

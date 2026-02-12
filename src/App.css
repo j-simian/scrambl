@@ -56,11 +56,17 @@ header h1 {
   gap: 1.5rem;
 }
 
+.alg-set-list-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .alg-sets {
   display: flex;
   gap: 1rem;
   justify-content: center;
-  padding: 2rem 0;
+  flex-wrap: wrap;
+  padding: 1rem 0;
 }
 
 .alg-set-card {
@@ -80,6 +86,11 @@ header h1 {
 .alg-set-card:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.3);
+}
+
+.alg-set-card.drag-over {
+  border-color: rgba(234, 179, 8, 0.5);
+  background: rgba(234, 179, 8, 0.08);
 }
 
 .alg-set-name {

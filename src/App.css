@@ -158,6 +158,11 @@ header h1 {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+.alg-case-card.selected {
+  border-color: rgba(234, 179, 8, 0.6);
+  background: rgba(234, 179, 8, 0.1);
+}
+
 .alg-case-card.drag-over {
   border-color: rgba(234, 179, 8, 0.5);
   background: rgba(234, 179, 8, 0.08);
@@ -873,6 +878,23 @@ main {
   color: #ef4444;
 }
 
+.alg-clear-selection-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  align-self: center;
+}
+
+.alg-clear-selection-btn:hover {
+  opacity: 1;
+}
+
 .alg-add-case-btn {
   appearance: none;
   padding: 0.5rem 1rem;
@@ -926,6 +948,23 @@ main {
 }
 
 .alg-set-edit-btn:hover {
+  opacity: 1;
+}
+
+.alg-mode-toggle {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  margin-left: auto;
+}
+
+.alg-mode-toggle:hover {
   opacity: 1;
 }
 

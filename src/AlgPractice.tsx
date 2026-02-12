@@ -173,6 +173,10 @@ export default function AlgPractice() {
   // Custom sets
   const [customSets, setCustomSets] = useState<AlgSet[]>(initSets)
 
+  // Case list view mode
+  const [caseViewMode, setCaseViewMode] = useState<'view' | 'edit'>('view')
+  const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set())
+
   // Sections state
   const [sections, setSections] = useState<AlgSetSection[]>([])
   const [dragOverSection, setDragOverSection] = useState<string | null>(null)
@@ -340,11 +344,31 @@ export default function AlgPractice() {
     setView('practice')
   }
 
+  const practiceSelected = () => {
+    if (!selectedSet || selectedCaseIds.size === 0) return
+    const filteredSet: AlgSet = {
+      ...selectedSet,
+      cases: selectedSet.cases.filter(c => selectedCaseIds.has(c.id)),
+    }
+    const c = randomCase(filteredSet)
+    setSelectedCase(c)
+    setSolves(loadTimes(c.id))
+    setDisplayTime(0)
+    setTimerState('idle')
+    setShowAlg(false)
+    setRandomMode(true)
+    setSelectedSet(filteredSet)
+    setView('practice')
+  }
+
   const goBackToCases = () => {
     setTimerState('idle')
     cancelAnimationFrame(animationFrameRef.current)
     clearTimeout(holdTimeoutRef.current)
     startTimeRef.current = 0
+    // Restore the full set if we were practicing a filtered subset
+    const fullSet = customSets.find(s => s.id === selectedSet?.id)
+    if (fullSet) setSelectedSet(fullSet)
     setView('cases')
   }
 
@@ -595,20 +619,32 @@ export default function AlgPractice() {
       saveSections(selectedSet.id, next)
     }
 
+    const isEditMode = caseViewMode === 'edit'
+
+    const toggleCaseSelection = (caseId: string) => {
+      setSelectedCaseIds(prev => {
+        const next = new Set(prev)
+        if (next.has(caseId)) next.delete(caseId)
+        else next.add(caseId)
+        return next
+      })
+    }
+
     const renderCaseCard = (caseId: string, sectionId: string) => {
       const c = caseMap.get(caseId)
       if (!c) return null
+      const isSelected = !isEditMode && selectedCaseIds.has(caseId)
       return (
         <button
           key={caseId}
-          className={`alg-case-card ${dragOverCaseId === caseId ? 'drag-over' : ''}`}
-          draggable
-          onDragStart={e => handleDragStart(e, caseId, sectionId)}
-          onDragOver={e => handleCaseDragOver(e, caseId)}
-          onDragLeave={handleCaseDragLeave}
-          onDrop={e => handleCaseDrop(e, caseId, sectionId)}
-          onDragEnd={handleDragEnd}
-          onClick={() => openEditModal(c)}
+          className={`alg-case-card ${isEditMode && dragOverCaseId === caseId ? 'drag-over' : ''} ${isSelected ? 'selected' : ''}`}
+          draggable={isEditMode}
+          onDragStart={isEditMode ? e => handleDragStart(e, caseId, sectionId) : undefined}
+          onDragOver={isEditMode ? e => handleCaseDragOver(e, caseId) : undefined}
+          onDragLeave={isEditMode ? handleCaseDragLeave : undefined}
+          onDrop={isEditMode ? e => handleCaseDrop(e, caseId, sectionId) : undefined}
+          onDragEnd={isEditMode ? handleDragEnd : undefined}
+          onClick={() => isEditMode ? openEditModal(c) : toggleCaseSelection(caseId)}
         >
           <OllDiagram top={c.top} sides={c.sides} size={60} colors={selectedSet.colors} />
           <span className="alg-case-name">{c.name}</span>
@@ -616,16 +652,31 @@ export default function AlgPractice() {
       )
     }
 
+    const toggleSectionSelection = (caseIds: string[]) => {
+      setSelectedCaseIds(prev => {
+        const next = new Set(prev)
+        const allSelected = caseIds.every(id => next.has(id))
+        if (allSelected) {
+          caseIds.forEach(id => next.delete(id))
+        } else {
+          caseIds.forEach(id => next.add(id))
+        }
+        return next
+      })
+    }
+
     const renderSectionHeader = (section: AlgSetSection) => (
       <div className="alg-section-header" key={`header-${section.id}`}>
-        <span
-          className="alg-section-grip"
-          draggable
-          onDragStart={e => { e.stopPropagation(); handleSectionDragStart(e, section.id) }}
-          onDragEnd={handleDragEnd}
-          title="Drag to reorder"
-        >&#10303;</span>
-        {editingSectionId === section.id ? (
+        {isEditMode && (
+          <span
+            className="alg-section-grip"
+            draggable
+            onDragStart={e => { e.stopPropagation(); handleSectionDragStart(e, section.id) }}
+            onDragEnd={handleDragEnd}
+            title="Drag to reorder"
+          >&#10303;</span>
+        )}
+        {isEditMode && editingSectionId === section.id ? (
           <input
             className="alg-section-name-input"
             autoFocus
@@ -636,12 +687,15 @@ export default function AlgPractice() {
         ) : (
           <h3
             className="alg-section-name"
-            onClick={() => setEditingSectionId(section.id)}
+            onClick={isEditMode ? () => setEditingSectionId(section.id) : () => toggleSectionSelection(section.caseIds)}
+            style={isEditMode ? undefined : { cursor: 'pointer' }}
           >
             {section.name}
           </h3>
         )}
-        <button className="alg-section-delete" onClick={() => deleteSection(section.id)} title="Delete section">&times;</button>
+        {isEditMode && (
+          <button className="alg-section-delete" onClick={() => deleteSection(section.id)} title="Delete section">&times;</button>
+        )}
       </div>
     )
 
@@ -650,26 +704,50 @@ export default function AlgPractice() {
         <button className="alg-back" onClick={goBackToSets}>&larr; Back</button>
         <div className="alg-set-header">
           <h2 className="alg-section-title">{selectedSet.name}</h2>
-          <button className="alg-set-edit-btn" onClick={openSetEdit} title="Edit set">&#9998;</button>
+          {isEditMode && (
+            <button className="alg-set-edit-btn" onClick={openSetEdit} title="Edit set">&#9998;</button>
+          )}
+          <button
+            className="alg-mode-toggle"
+            onClick={() => {
+              setCaseViewMode(m => {
+                if (m === 'view') setSelectedCaseIds(new Set())
+                return m === 'view' ? 'edit' : 'view'
+              })
+            }}
+          >
+            {isEditMode ? 'Done' : 'Edit'}
+          </button>
         </div>
         {selectedSet.cases.length > 0 && (
-          <button className="alg-practice-set-btn" onClick={practiceSet}>Practice Set</button>
+          selectedCaseIds.size > 0 && !isEditMode ? (
+            <button className="alg-practice-set-btn" onClick={practiceSelected}>
+              Practice Selected ({selectedCaseIds.size})
+            </button>
+          ) : (
+            <button className="alg-practice-set-btn" onClick={practiceSet}>Practice Set</button>
+          )
         )}
-        <button className="alg-add-case-btn" onClick={() => {
-          const id = `${selectedSet.id}-${Date.now()}`
-          const blank: AlgCase = { id, name: '', alg: '', top: Array(9).fill(0), sides: Array(12).fill(0) }
-          openEditModal(blank, true)
-        }}>+ Add Case</button>
+        {selectedCaseIds.size > 0 && !isEditMode && (
+          <button className="alg-clear-selection-btn" onClick={() => setSelectedCaseIds(new Set())}>Clear Selection</button>
+        )}
+        {isEditMode && (
+          <button className="alg-add-case-btn" onClick={() => {
+            const id = `${selectedSet.id}-${Date.now()}`
+            const blank: AlgCase = { id, name: '', alg: '', top: Array(9).fill(0), sides: Array(12).fill(0) }
+            openEditModal(blank, true)
+          }}>+ Add Case</button>
+        )}
 
         {hasSections ? (
           <>
             {sections.map(section => (
               <div
                 key={section.id}
-                className={`alg-section ${dragOverSection === section.id ? 'drag-over' : ''}`}
-                onDragOver={e => handleDragOver(e, section.id)}
-                onDragLeave={e => handleDragLeave(e, section.id)}
-                onDrop={e => handleDrop(e, section.id)}
+                className={`alg-section ${isEditMode && dragOverSection === section.id ? 'drag-over' : ''}`}
+                onDragOver={isEditMode ? e => handleDragOver(e, section.id) : undefined}
+                onDragLeave={isEditMode ? e => handleDragLeave(e, section.id) : undefined}
+                onDrop={isEditMode ? e => handleDrop(e, section.id) : undefined}
               >
                 {renderSectionHeader(section)}
                 <div className="alg-case-grid">
@@ -679,31 +757,39 @@ export default function AlgPractice() {
             ))}
             {unsortedIds.length > 0 && (
               <div
-                className={`alg-section alg-section-unsorted ${dragOverSection === '__unsorted' ? 'drag-over' : ''}`}
-                onDragOver={e => handleDragOver(e, '__unsorted')}
-                onDragLeave={e => handleDragLeave(e, '__unsorted')}
-                onDrop={e => handleDrop(e, '__unsorted')}
+                className={`alg-section alg-section-unsorted ${isEditMode && dragOverSection === '__unsorted' ? 'drag-over' : ''}`}
+                onDragOver={isEditMode ? e => handleDragOver(e, '__unsorted') : undefined}
+                onDragLeave={isEditMode ? e => handleDragLeave(e, '__unsorted') : undefined}
+                onDrop={isEditMode ? e => handleDrop(e, '__unsorted') : undefined}
               >
                 <div className="alg-section-header">
-                  <h3 className="alg-section-name unsorted">Unsorted</h3>
+                  <h3
+                    className="alg-section-name unsorted"
+                    onClick={!isEditMode ? () => toggleSectionSelection(unsortedIds) : undefined}
+                    style={!isEditMode ? { cursor: 'pointer' } : undefined}
+                  >Unsorted</h3>
                 </div>
                 <div className="alg-case-grid">
                   {unsortedIds.map(id => renderCaseCard(id, '__unsorted'))}
                 </div>
               </div>
             )}
-            <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
+            {isEditMode && (
+              <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
+            )}
           </>
         ) : (
           <>
             <div className="alg-case-grid">
               {selectedSet.cases.map(c => renderCaseCard(c.id, '__flat'))}
             </div>
-            <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
+            {isEditMode && (
+              <button className="alg-add-section-btn" onClick={addSection}>+ Add Section</button>
+            )}
           </>
         )}
 
-        {editingCase && (
+        {isEditMode && editingCase && (
           <div className="modal-overlay" onClick={() => { setEditingCase(null); setIsNewCase(false) }}>
             <div className="modal alg-edit-modal" onClick={e => e.stopPropagation()}>
               <h3>{isNewCase ? 'Add Case' : 'Edit Case'}</h3>

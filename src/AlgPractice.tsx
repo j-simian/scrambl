@@ -16,6 +16,10 @@ const PRESETS = [
   { name: 'PLL', path: '/presets/pll.json' },
 ]
 
+const ALGSET_ICONS = [
+  { id: '2x2', name: '2×2', path: '/icons/2x2.svg' },
+]
+
 const CUSTOM_SETS_KEY = 'scrambl-custom-algsets'
 
 function loadCustomSets(): AlgSet[] {
@@ -143,6 +147,7 @@ export default function AlgPractice() {
   const [editingSetInfo, setEditingSetInfo] = useState(false)
   const [editSetName, setEditSetName] = useState('')
   const [editSetColors, setEditSetColors] = useState(false)
+  const [editSetIcon, setEditSetIcon] = useState<string | undefined>(undefined)
   // Force re-render of case grid after saving
   const [overrideVersion, setOverrideVersion] = useState(0)
 
@@ -150,6 +155,8 @@ export default function AlgPractice() {
   const [showNewSetModal, setShowNewSetModal] = useState(false)
   const [selectedPreset, setSelectedPreset] = useState('')
   const [loadingPreset, setLoadingPreset] = useState(false)
+  const [newSetName, setNewSetName] = useState('New Set')
+  const [newSetIcon, setNewSetIcon] = useState<string | undefined>(undefined)
 
   // Set list view mode
   const [setListMode, setSetListMode] = useState<'view' | 'edit'>('view')
@@ -300,22 +307,22 @@ export default function AlgPractice() {
     if (timerEl) {
       timerEl.addEventListener('mousedown', handlePointerDown)
       timerEl.addEventListener('touchstart', handlePointerDown, { passive: false })
+      timerEl.addEventListener('mouseup', handlePointerUp)
+      timerEl.addEventListener('touchend', handlePointerUp)
     }
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
-    window.addEventListener('mouseup', handlePointerUp)
-    window.addEventListener('touchend', handlePointerUp)
 
     return () => {
       if (timerEl) {
         timerEl.removeEventListener('mousedown', handlePointerDown)
         timerEl.removeEventListener('touchstart', handlePointerDown)
+        timerEl.removeEventListener('mouseup', handlePointerUp)
+        timerEl.removeEventListener('touchend', handlePointerUp)
       }
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
-      window.removeEventListener('mouseup', handlePointerUp)
-      window.removeEventListener('touchend', handlePointerUp)
     }
   }, [view, timerState, startTimer, stopTimer])
 
@@ -788,12 +795,13 @@ export default function AlgPractice() {
 
   const createBlankSet = () => {
     const id = `custom-${Date.now()}`
-    const newSet: AlgSet = { id, name: 'New Set', cases: [], colors: true }
+    const newSet: AlgSet = { id, name: newSetName || 'New Set', cases: [], colors: true, icon: newSetIcon }
     const updated = [...customSets, newSet]
     saveCustomSets(updated)
     setCustomSets(updated)
     setShowNewSetModal(false)
-    openSet(newSet)
+    setNewSetName('New Set')
+    setNewSetIcon(undefined)
   }
 
   const createFromPreset = async (presetPath: string) => {
@@ -808,7 +816,6 @@ export default function AlgPractice() {
       setCustomSets(updated)
       setShowNewSetModal(false)
       setSelectedPreset('')
-      openSet(newSet)
     } finally {
       setLoadingPreset(false)
     }
@@ -852,7 +859,6 @@ export default function AlgPractice() {
         setCustomSets(updated)
         if (preset.sections) saveSections(id, preset.sections)
         setShowNewSetModal(false)
-        openSet(newSet)
       } catch { /* ignore bad files */ }
     }
     reader.readAsText(file)
@@ -1075,13 +1081,14 @@ export default function AlgPractice() {
     if (!selectedSet) return
     setEditSetName(selectedSet.name)
     setEditSetColors(selectedSet.colors ?? false)
+    setEditSetIcon(selectedSet.icon)
     setEditingSetInfo(true)
   }
 
   const saveSetEdit = () => {
     if (!selectedSet) return
     const updatedSets = customSets.map(s =>
-      s.id === selectedSet.id ? { ...s, name: editSetName, colors: editSetColors } : s
+      s.id === selectedSet.id ? { ...s, name: editSetName, colors: editSetColors, icon: editSetIcon } : s
     )
     saveCustomSets(updatedSets)
     setCustomSets(updatedSets)
@@ -1170,6 +1177,7 @@ export default function AlgPractice() {
           onDragEnd={setsEditing ? handleSetDragEnd : undefined}
           onTouchStart={setsEditing ? e => handleSetTouchStart(e, set.id, sectionId) : undefined}
         >
+          {set.icon && <img className="alg-set-icon" src={set.icon} alt="" />}
           <span className="alg-set-name">{set.name}</span>
           <span className="alg-set-count">{set.cases.length} cases</span>
           {setsEditing && (
@@ -1290,7 +1298,7 @@ export default function AlgPractice() {
             {!hasSetSecs && (
               <button className="alg-add-section-btn" onClick={addSetSection}>+ Add Section</button>
             )}
-            <button className="alg-new-set-card" onClick={() => setShowNewSetModal(true)}>
+            <button className="alg-new-set-card" onClick={() => { setShowNewSetModal(true); setNewSetName('New Set'); setNewSetIcon(undefined) }}>
               <span className="alg-set-name">+</span>
               <span className="alg-set-count">New Set</span>
             </button>
@@ -1298,14 +1306,41 @@ export default function AlgPractice() {
         )}
 
         {showNewSetModal && (
-          <div className="modal-overlay" onClick={() => { setShowNewSetModal(false); setSelectedPreset('') }}>
+          <div className="modal-overlay" onClick={() => { setShowNewSetModal(false); setSelectedPreset(''); setNewSetName('New Set'); setNewSetIcon(undefined) }}>
             <div className="modal alg-new-set-modal" onClick={e => e.stopPropagation()}>
               <h3>New Algorithm Set</h3>
 
-              <button className="alg-new-set-option" onClick={createBlankSet}>
+              <div className="alg-new-set-blank-form">
                 <span className="alg-new-set-option-name">Blank Set</span>
-                <span className="alg-new-set-option-desc">Start from scratch</span>
-              </button>
+                <label className="alg-edit-label">
+                  Name
+                  <input
+                    type="text"
+                    value={newSetName}
+                    onChange={e => setNewSetName(e.target.value)}
+                  />
+                </label>
+                <div className="alg-icon-picker">
+                  <span className="alg-icon-picker-label">Icon</span>
+                  <div className="alg-icon-options">
+                    <button
+                      className={`alg-icon-option ${!newSetIcon ? 'active' : ''}`}
+                      onClick={() => setNewSetIcon(undefined)}
+                    >None</button>
+                    {ALGSET_ICONS.map(icon => (
+                      <button
+                        key={icon.id}
+                        className={`alg-icon-option ${newSetIcon === icon.path ? 'active' : ''}`}
+                        onClick={() => setNewSetIcon(icon.path)}
+                        title={icon.name}
+                      >
+                        <img src={icon.path} alt={icon.name} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button className="alg-preset-create" onClick={createBlankSet}>Create</button>
+              </div>
 
               <div className="alg-new-set-divider">or from a preset</div>
 
@@ -1345,7 +1380,7 @@ export default function AlgPractice() {
                 />
               </label>
 
-              <button className="modal-close" onClick={() => { setShowNewSetModal(false); setSelectedPreset('') }}>Close</button>
+              <button className="modal-close" onClick={() => { setShowNewSetModal(false); setSelectedPreset(''); setNewSetName('New Set'); setNewSetIcon(undefined) }}>Close</button>
             </div>
           </div>
         )}
@@ -1728,6 +1763,7 @@ export default function AlgPractice() {
       <div className="alg-practice">
         <button className="alg-back" onClick={goBackToSets}>&larr; Back</button>
         <div className="alg-set-header">
+          {selectedSet.icon && <img className="alg-set-header-icon" src={selectedSet.icon} alt="" />}
           <h2 className="alg-section-title">{selectedSet.name}</h2>
           {isEditMode && (
             <button className="alg-set-edit-btn" onClick={openSetEdit} title="Edit set">&#9998;</button>
@@ -1916,6 +1952,26 @@ export default function AlgPractice() {
                   onChange={e => setEditSetName(e.target.value)}
                 />
               </label>
+
+              <div className="alg-icon-picker">
+                <span className="alg-icon-picker-label">Icon</span>
+                <div className="alg-icon-options">
+                  <button
+                    className={`alg-icon-option ${!editSetIcon ? 'active' : ''}`}
+                    onClick={() => setEditSetIcon(undefined)}
+                  >None</button>
+                  {ALGSET_ICONS.map(icon => (
+                    <button
+                      key={icon.id}
+                      className={`alg-icon-option ${editSetIcon === icon.path ? 'active' : ''}`}
+                      onClick={() => setEditSetIcon(icon.path)}
+                      title={icon.name}
+                    >
+                      <img src={icon.path} alt={icon.name} />
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <label className="alg-edit-toggle">
                 <input

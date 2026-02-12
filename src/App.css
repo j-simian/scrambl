@@ -1134,16 +1134,15 @@ main {
 }
 
 /* Algset icons */
-.alg-set-icon {
-  width: 48px;
-  height: 48px;
+.alg-section-icon {
+  width: 24px;
+  height: 24px;
   object-fit: contain;
 }
 
-.alg-set-header-icon {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
+.alg-icon-picker-inline {
+  width: 100%;
+  margin-top: 0.25rem;
 }
 
 /* Icon picker */

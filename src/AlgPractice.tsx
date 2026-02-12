@@ -193,6 +193,23 @@ export default function AlgPractice() {
   const holdTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const timerRef = useRef<HTMLDivElement>(null)
 
+  // Touch drag and drop refs (for mobile support)
+  const touchDragRef = useRef<{
+    type: 'case' | 'section'
+    caseId?: string
+    fromSectionId?: string
+    sectionId?: string
+    startX: number
+    startY: number
+    sourceEl: HTMLElement
+    clone: HTMLElement | null
+    isDragging: boolean
+    dragReady: boolean
+    holdTimer: ReturnType<typeof setTimeout> | null
+    currentTarget: { type: 'case' | 'section'; id: string; sectionId?: string } | null
+  } | null>(null)
+  const touchDropHandlerRef = useRef<((target: { type: 'case' | 'section'; id: string; sectionId?: string }) => void) | null>(null)
+
   const updateDisplay = useCallback(() => {
     if (startTimeRef.current > 0) {
       setDisplayTime(Date.now() - startTimeRef.current)
@@ -317,6 +334,128 @@ export default function AlgPractice() {
       clearTimeout(holdTimeoutRef.current)
     }
   }, [])
+
+  // Touch drag and drop for mobile (cases & sections in edit mode)
+  useEffect(() => {
+    if (view !== 'cases' || caseViewMode !== 'edit') {
+      if (touchDragRef.current?.clone) {
+        touchDragRef.current.clone.remove()
+      }
+      if (touchDragRef.current?.holdTimer) {
+        clearTimeout(touchDragRef.current.holdTimer)
+      }
+      touchDragRef.current = null
+      return
+    }
+
+    const MOVE_CANCEL_THRESHOLD = 8
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const drag = touchDragRef.current
+      if (!drag) return
+
+      const touch = e.touches[0]
+      const dx = touch.clientX - drag.startX
+      const dy = touch.clientY - drag.startY
+
+      // Before long press fires, cancel if finger moves too much
+      if (!drag.dragReady && !drag.isDragging) {
+        if (Math.abs(dx) > MOVE_CANCEL_THRESHOLD || Math.abs(dy) > MOVE_CANCEL_THRESHOLD) {
+          if (drag.holdTimer) clearTimeout(drag.holdTimer)
+          touchDragRef.current = null
+        }
+        return
+      }
+
+      // Long press fired but not yet dragging – create clone on first move
+      if (drag.dragReady && !drag.isDragging) {
+        drag.isDragging = true
+        const rect = drag.sourceEl.getBoundingClientRect()
+        const clone = drag.sourceEl.cloneNode(true) as HTMLElement
+        clone.style.position = 'fixed'
+        clone.style.left = `${rect.left}px`
+        clone.style.top = `${rect.top}px`
+        clone.style.width = `${rect.width}px`
+        clone.style.height = `${rect.height}px`
+        clone.style.opacity = '0.85'
+        clone.style.zIndex = '10000'
+        clone.style.pointerEvents = 'none'
+        clone.style.transition = 'none'
+        clone.style.margin = '0'
+        clone.style.willChange = 'transform'
+        clone.classList.add('touch-drag-clone')
+        document.body.appendChild(clone)
+        drag.clone = clone
+        drag.sourceEl.classList.add('touch-drag-source')
+      }
+
+      e.preventDefault()
+      if (drag.clone) {
+        drag.clone.style.transform = `translate(${dx}px, ${dy}px)`
+      }
+
+      // Find drop target under finger
+      if (drag.clone) drag.clone.style.display = 'none'
+      const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null
+      if (drag.clone) drag.clone.style.display = ''
+
+      if (el) {
+        const caseCard = el.closest('[data-drag-case]') as HTMLElement | null
+        if (caseCard && drag.type === 'case') {
+          const caseId = caseCard.getAttribute('data-drag-case')!
+          const sectionId = caseCard.getAttribute('data-drag-section')!
+          drag.currentTarget = { type: 'case', id: caseId, sectionId }
+          setDragOverCaseId(caseId)
+          setDragOverSection(null)
+          return
+        }
+        const sectionEl = el.closest('[data-drop-section]') as HTMLElement | null
+        if (sectionEl) {
+          const sectionId = sectionEl.getAttribute('data-drop-section')!
+          drag.currentTarget = { type: 'section', id: sectionId }
+          setDragOverSection(sectionId)
+          setDragOverCaseId(null)
+          return
+        }
+      }
+
+      drag.currentTarget = null
+      setDragOverSection(null)
+      setDragOverCaseId(null)
+    }
+
+    const handleTouchEnd = () => {
+      const drag = touchDragRef.current
+      if (!drag) return
+
+      if (drag.holdTimer) clearTimeout(drag.holdTimer)
+
+      if (drag.isDragging && drag.currentTarget && touchDropHandlerRef.current) {
+        touchDropHandlerRef.current(drag.currentTarget)
+      }
+
+      if (drag.clone) drag.clone.remove()
+      if (drag.sourceEl) drag.sourceEl.classList.remove('touch-drag-source', 'touch-drag-ready')
+      touchDragRef.current = null
+      setDragOverSection(null)
+      setDragOverCaseId(null)
+    }
+
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+    window.addEventListener('touchend', handleTouchEnd)
+
+    return () => {
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleTouchEnd)
+      if (touchDragRef.current?.clone) {
+        touchDragRef.current.clone.remove()
+      }
+      if (touchDragRef.current?.holdTimer) {
+        clearTimeout(touchDragRef.current.holdTimer)
+      }
+      touchDragRef.current = null
+    }
+  }, [view, caseViewMode])
 
   const openSet = (set: AlgSet) => {
     setSelectedSet(set)
@@ -635,6 +774,135 @@ export default function AlgPractice() {
       e.dataTransfer.effectAllowed = 'move'
     }
 
+    // Touch drag handlers (mobile)
+    const handleCaseTouchStart = (e: React.TouchEvent, caseId: string, sectionId: string) => {
+      if (touchDragRef.current) return
+      const touch = e.touches[0]
+      const sourceEl = e.currentTarget as HTMLElement
+      const holdTimer = setTimeout(() => {
+        if (touchDragRef.current) {
+          touchDragRef.current.dragReady = true
+          sourceEl.classList.add('touch-drag-ready')
+        }
+      }, 200)
+      touchDragRef.current = {
+        type: 'case',
+        caseId,
+        fromSectionId: sectionId,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        sourceEl,
+        clone: null,
+        isDragging: false,
+        dragReady: false,
+        holdTimer,
+        currentTarget: null,
+      }
+    }
+
+    const handleSectionTouchStart = (e: React.TouchEvent, sectionId: string) => {
+      if (touchDragRef.current) return
+      e.stopPropagation()
+      const touch = e.touches[0]
+      const sectionEl = (e.currentTarget as HTMLElement).closest('.alg-section') as HTMLElement
+      const holdTimer = setTimeout(() => {
+        if (touchDragRef.current) {
+          touchDragRef.current.dragReady = true
+          sectionEl.classList.add('touch-drag-ready')
+        }
+      }, 200)
+      touchDragRef.current = {
+        type: 'section',
+        sectionId,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        sourceEl: sectionEl,
+        clone: null,
+        isDragging: false,
+        dragReady: false,
+        holdTimer,
+        currentTarget: null,
+      }
+    }
+
+    // Touch drop handler (has access to current state via closure)
+    touchDropHandlerRef.current = (target) => {
+      const drag = touchDragRef.current
+      if (!drag) return
+
+      if (drag.type === 'section' && drag.sectionId) {
+        if (target.type === 'section') {
+          const fromId = drag.sectionId
+          const toId = target.id
+          if (fromId === toId) return
+          const fromIdx = sections.findIndex(s => s.id === fromId)
+          const toIdx = sections.findIndex(s => s.id === toId)
+          if (fromIdx === -1 || toIdx === -1) return
+          const next = [...sections]
+          const [moved] = next.splice(fromIdx, 1)
+          next.splice(toIdx, 0, moved)
+          setSections(next)
+          saveSections(selectedSet.id, next)
+        }
+      } else if (drag.type === 'case' && drag.caseId && drag.fromSectionId) {
+        if (target.type === 'case' && target.sectionId) {
+          const caseId = drag.caseId
+          const fromSectionId = drag.fromSectionId
+          const targetCaseId = target.id
+          const targetSectionId = target.sectionId
+          if (caseId === targetCaseId) return
+
+          if (targetSectionId === '__flat') {
+            const cases = [...selectedSet.cases]
+            const fromIdx = cases.findIndex(c => c.id === caseId)
+            const toIdx = cases.findIndex(c => c.id === targetCaseId)
+            if (fromIdx === -1 || toIdx === -1) return
+            const [moved] = cases.splice(fromIdx, 1)
+            cases.splice(toIdx, 0, moved)
+            const updatedSets = customSets.map(s =>
+              s.id === selectedSet.id ? { ...s, cases } : s
+            )
+            saveCustomSets(updatedSets)
+            setCustomSets(updatedSets)
+            const updated = updatedSets.find(s => s.id === selectedSet.id)
+            if (updated) setSelectedSet(updated)
+          } else {
+            const toIdx = sections.find(s => s.id === targetSectionId)?.caseIds.indexOf(targetCaseId) ?? -1
+            if (toIdx === -1) return
+            const next = sections.map(s => {
+              let ids = s.caseIds
+              if (s.id === fromSectionId) {
+                ids = ids.filter(id => id !== caseId)
+              }
+              if (s.id === targetSectionId) {
+                ids = [...ids.filter(id => id !== caseId)]
+                ids.splice(toIdx, 0, caseId)
+              }
+              return ids === s.caseIds ? s : { ...s, caseIds: ids }
+            })
+            setSections(next)
+            saveSections(selectedSet.id, next)
+          }
+        } else if (target.type === 'section') {
+          const caseId = drag.caseId
+          const fromSectionId = drag.fromSectionId
+          const toSectionId = target.id
+          if (fromSectionId === toSectionId) return
+          const next = sections.map(s => {
+            if (s.id === fromSectionId) {
+              return { ...s, caseIds: s.caseIds.filter(id => id !== caseId) }
+            }
+            if (s.id === toSectionId) {
+              return { ...s, caseIds: [...s.caseIds, caseId] }
+            }
+            return s
+          })
+          setSections(next)
+          saveSections(selectedSet.id, next)
+        }
+      }
+    }
+
     const addSection = () => {
       const id = `sec-${Date.now()}`
       const next = [...sections, { id, name: 'New Section', caseIds: [] }]
@@ -673,6 +941,8 @@ export default function AlgPractice() {
       return (
         <button
           key={caseId}
+          data-drag-case={isEditMode ? caseId : undefined}
+          data-drag-section={isEditMode ? sectionId : undefined}
           className={`alg-case-card ${isEditMode && dragOverCaseId === caseId ? 'drag-over' : ''} ${isSelected ? 'selected' : ''}`}
           draggable={isEditMode}
           onDragStart={isEditMode ? e => handleDragStart(e, caseId, sectionId) : undefined}
@@ -680,6 +950,7 @@ export default function AlgPractice() {
           onDragLeave={isEditMode ? handleCaseDragLeave : undefined}
           onDrop={isEditMode ? e => handleCaseDrop(e, caseId, sectionId) : undefined}
           onDragEnd={isEditMode ? handleDragEnd : undefined}
+          onTouchStart={isEditMode ? e => handleCaseTouchStart(e, caseId, sectionId) : undefined}
           onClick={() => isEditMode ? openEditModal(c) : toggleCaseSelection(caseId)}
         >
           <OllDiagram top={c.top} sides={c.sides} size={60} colors={selectedSet.colors} />
@@ -709,6 +980,7 @@ export default function AlgPractice() {
             draggable
             onDragStart={e => { e.stopPropagation(); handleSectionDragStart(e, section.id) }}
             onDragEnd={handleDragEnd}
+            onTouchStart={e => handleSectionTouchStart(e, section.id)}
             title="Drag to reorder"
           >&#10303;</span>
         )}
@@ -780,6 +1052,7 @@ export default function AlgPractice() {
             {sections.map(section => (
               <div
                 key={section.id}
+                data-drop-section={isEditMode ? section.id : undefined}
                 className={`alg-section ${isEditMode && dragOverSection === section.id ? 'drag-over' : ''}`}
                 onDragOver={isEditMode ? e => handleDragOver(e, section.id) : undefined}
                 onDragLeave={isEditMode ? e => handleDragLeave(e, section.id) : undefined}
@@ -793,6 +1066,7 @@ export default function AlgPractice() {
             ))}
             {unsortedIds.length > 0 && (
               <div
+                data-drop-section={isEditMode ? '__unsorted' : undefined}
                 className={`alg-section alg-section-unsorted ${isEditMode && dragOverSection === '__unsorted' ? 'drag-over' : ''}`}
                 onDragOver={isEditMode ? e => handleDragOver(e, '__unsorted') : undefined}
                 onDragLeave={isEditMode ? e => handleDragLeave(e, '__unsorted') : undefined}

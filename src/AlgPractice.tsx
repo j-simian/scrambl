@@ -176,6 +176,7 @@ export default function AlgPractice() {
   // Sections state
   const [sections, setSections] = useState<AlgSetSection[]>([])
   const [dragOverSection, setDragOverSection] = useState<string | null>(null)
+  const [dragOverCaseId, setDragOverCaseId] = useState<string | null>(null)
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
 
   // Timer state
@@ -444,8 +445,9 @@ export default function AlgPractice() {
     const unsortedIds = getUnsortedIds(selectedSet, sections)
     const hasSections = sections.length > 0 || (selectedSet.sections && selectedSet.sections.length > 0)
 
+    // Case drag handlers
     const handleDragStart = (e: React.DragEvent, caseId: string, fromSectionId: string) => {
-      e.dataTransfer.setData('text/plain', JSON.stringify({ caseId, fromSectionId }))
+      e.dataTransfer.setData('application/case', JSON.stringify({ caseId, fromSectionId }))
       e.dataTransfer.effectAllowed = 'move'
     }
 
@@ -456,7 +458,6 @@ export default function AlgPractice() {
     }
 
     const handleDragLeave = (e: React.DragEvent, sectionId: string) => {
-      // Only clear if we're actually leaving this section (not entering a child)
       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         if (dragOverSection === sectionId) setDragOverSection(null)
       }
@@ -465,12 +466,29 @@ export default function AlgPractice() {
     const handleDrop = (e: React.DragEvent, toSectionId: string) => {
       e.preventDefault()
       setDragOverSection(null)
-      try {
-        const { caseId, fromSectionId } = JSON.parse(e.dataTransfer.getData('text/plain'))
-        if (fromSectionId === toSectionId) return
 
-        // Remove from source section (if it's a real section, not unsorted)
-        // Add to target section (if it's a real section, not unsorted)
+      // Section reorder
+      const sectionData = e.dataTransfer.getData('application/section')
+      if (sectionData) {
+        try {
+          const { sectionId: fromId } = JSON.parse(sectionData)
+          if (fromId === toSectionId) return
+          const fromIdx = sections.findIndex(s => s.id === fromId)
+          const toIdx = sections.findIndex(s => s.id === toSectionId)
+          if (fromIdx === -1 || toIdx === -1) return
+          const next = [...sections]
+          const [moved] = next.splice(fromIdx, 1)
+          next.splice(toIdx, 0, moved)
+          setSections(next)
+          saveSections(selectedSet.id, next)
+        } catch { /* ignore */ }
+        return
+      }
+
+      // Case move
+      try {
+        const { caseId, fromSectionId } = JSON.parse(e.dataTransfer.getData('application/case'))
+        if (fromSectionId === toSectionId) return
         const next = sections.map(s => {
           if (s.id === fromSectionId) {
             return { ...s, caseIds: s.caseIds.filter(id => id !== caseId) }
@@ -485,8 +503,76 @@ export default function AlgPractice() {
       } catch { /* ignore bad data */ }
     }
 
+    const handleCaseDragOver = (e: React.DragEvent, caseId: string) => {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverCaseId(caseId)
+    }
+
+    const handleCaseDragLeave = (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+        setDragOverCaseId(null)
+      }
+    }
+
+    const handleCaseDrop = (e: React.DragEvent, targetCaseId: string, targetSectionId: string) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragOverCaseId(null)
+      setDragOverSection(null)
+
+      const caseData = e.dataTransfer.getData('application/case')
+      if (!caseData) return
+      try {
+        const { caseId, fromSectionId } = JSON.parse(caseData)
+        if (caseId === targetCaseId) return
+
+        if (targetSectionId === '__flat') {
+          // Reorder within flat case list
+          const cases = [...selectedSet.cases]
+          const fromIdx = cases.findIndex(c => c.id === caseId)
+          const toIdx = cases.findIndex(c => c.id === targetCaseId)
+          if (fromIdx === -1 || toIdx === -1) return
+          const [moved] = cases.splice(fromIdx, 1)
+          cases.splice(toIdx, 0, moved)
+          const updatedSets = customSets.map(s =>
+            s.id === selectedSet.id ? { ...s, cases } : s
+          )
+          saveCustomSets(updatedSets)
+          setCustomSets(updatedSets)
+          const updated = updatedSets.find(s => s.id === selectedSet.id)
+          if (updated) setSelectedSet(updated)
+        } else {
+          // Reorder within/across sections
+          const toIdx = sections.find(s => s.id === targetSectionId)?.caseIds.indexOf(targetCaseId) ?? -1
+          if (toIdx === -1) return
+          const next = sections.map(s => {
+            let ids = s.caseIds
+            if (s.id === fromSectionId) {
+              ids = ids.filter(id => id !== caseId)
+            }
+            if (s.id === targetSectionId) {
+              ids = [...ids.filter(id => id !== caseId)]
+              ids.splice(toIdx, 0, caseId)
+            }
+            return ids === s.caseIds ? s : { ...s, caseIds: ids }
+          })
+          setSections(next)
+          saveSections(selectedSet.id, next)
+        }
+      } catch { /* ignore */ }
+    }
+
     const handleDragEnd = () => {
       setDragOverSection(null)
+      setDragOverCaseId(null)
+    }
+
+    // Section drag handlers
+    const handleSectionDragStart = (e: React.DragEvent, sectionId: string) => {
+      e.dataTransfer.setData('application/section', JSON.stringify({ sectionId }))
+      e.dataTransfer.effectAllowed = 'move'
     }
 
     const addSection = () => {
@@ -515,9 +601,12 @@ export default function AlgPractice() {
       return (
         <button
           key={caseId}
-          className="alg-case-card"
-          draggable={hasSections}
+          className={`alg-case-card ${dragOverCaseId === caseId ? 'drag-over' : ''}`}
+          draggable
           onDragStart={e => handleDragStart(e, caseId, sectionId)}
+          onDragOver={e => handleCaseDragOver(e, caseId)}
+          onDragLeave={handleCaseDragLeave}
+          onDrop={e => handleCaseDrop(e, caseId, sectionId)}
           onDragEnd={handleDragEnd}
           onClick={() => openEditModal(c)}
         >
@@ -529,6 +618,13 @@ export default function AlgPractice() {
 
     const renderSectionHeader = (section: AlgSetSection) => (
       <div className="alg-section-header" key={`header-${section.id}`}>
+        <span
+          className="alg-section-grip"
+          draggable
+          onDragStart={e => { e.stopPropagation(); handleSectionDragStart(e, section.id) }}
+          onDragEnd={handleDragEnd}
+          title="Drag to reorder"
+        >&#10303;</span>
         {editingSectionId === section.id ? (
           <input
             className="alg-section-name-input"

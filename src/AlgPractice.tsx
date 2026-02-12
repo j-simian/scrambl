@@ -100,6 +100,30 @@ function getUnsortedIds(set: AlgSet, sections: AlgSetSection[]): string[] {
   return set.cases.map(c => c.id).filter(id => !assigned.has(id))
 }
 
+interface SetSection {
+  id: string
+  name: string
+  setIds: string[]
+}
+
+const SET_SECTIONS_KEY = 'scrambl-set-sections'
+
+function loadSetSections(): SetSection[] {
+  try {
+    const stored = localStorage.getItem(SET_SECTIONS_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch { return [] }
+}
+
+function saveSetSections(secs: SetSection[]): void {
+  localStorage.setItem(SET_SECTIONS_KEY, JSON.stringify(secs))
+}
+
+function getUnsortedSetIds(sets: AlgSet[], secs: SetSection[]): string[] {
+  const assigned = new Set(secs.flatMap(s => s.setIds))
+  return sets.map(s => s.id).filter(id => !assigned.has(id))
+}
+
 export default function AlgPractice() {
   const [view, setView] = useState<View>('sets')
   const [selectedSet, setSelectedSet] = useState<AlgSet | null>(null)
@@ -131,6 +155,11 @@ export default function AlgPractice() {
   const [setListMode, setSetListMode] = useState<'view' | 'edit'>('view')
   const [dragOverSetId, setDragOverSetId] = useState<string | null>(null)
 
+  // Set list sections
+  const [setListSections, setSetListSections] = useState<SetSection[]>(loadSetSections)
+  const [editingSetSectionId, setEditingSetSectionId] = useState<string | null>(null)
+  const [dragOverSetSection, setDragOverSetSection] = useState<string | null>(null)
+
   // Custom sets
   const [customSets, setCustomSets] = useState<AlgSet[]>(initSets)
 
@@ -156,10 +185,12 @@ export default function AlgPractice() {
 
   // Touch drag and drop refs (for mobile support)
   const touchDragRef = useRef<{
-    type: 'case' | 'section'
+    type: 'case' | 'section' | 'set'
     caseId?: string
     fromSectionId?: string
     sectionId?: string
+    setId?: string
+    fromSetSectionId?: string
     startX: number
     startY: number
     sourceEl: HTMLElement
@@ -167,9 +198,9 @@ export default function AlgPractice() {
     isDragging: boolean
     dragReady: boolean
     holdTimer: ReturnType<typeof setTimeout> | null
-    currentTarget: { type: 'case' | 'section'; id: string; sectionId?: string } | null
+    currentTarget: { type: 'case' | 'section' | 'set'; id: string; sectionId?: string } | null
   } | null>(null)
-  const touchDropHandlerRef = useRef<((target: { type: 'case' | 'section'; id: string; sectionId?: string }) => void) | null>(null)
+  const touchDropHandlerRef = useRef<((target: { type: 'case' | 'section' | 'set'; id: string; sectionId?: string }) => void) | null>(null)
 
   const updateDisplay = useCallback(() => {
     if (startTimeRef.current > 0) {
@@ -426,10 +457,30 @@ export default function AlgPractice() {
     }
 
     const MOVE_CANCEL_THRESHOLD = 8
+    const hasSetSecs = setListSections.length > 0
+
+    const createClone = (sourceEl: HTMLElement) => {
+      const rect = sourceEl.getBoundingClientRect()
+      const clone = sourceEl.cloneNode(true) as HTMLElement
+      clone.style.position = 'fixed'
+      clone.style.left = `${rect.left}px`
+      clone.style.top = `${rect.top}px`
+      clone.style.width = `${rect.width}px`
+      clone.style.height = `${rect.height}px`
+      clone.style.opacity = '0.85'
+      clone.style.zIndex = '10000'
+      clone.style.pointerEvents = 'none'
+      clone.style.transition = 'none'
+      clone.style.margin = '0'
+      clone.style.willChange = 'transform'
+      clone.classList.add('touch-drag-clone')
+      document.body.appendChild(clone)
+      return clone
+    }
 
     const handleTouchMove = (e: TouchEvent) => {
       const drag = touchDragRef.current
-      if (!drag || drag.type !== 'section') return // reuse 'section' type for set drag
+      if (!drag || (drag.type !== 'set' && drag.type !== 'section')) return
 
       const touch = e.touches[0]
       const dx = touch.clientX - drag.startX
@@ -445,22 +496,7 @@ export default function AlgPractice() {
 
       if (drag.dragReady && !drag.isDragging) {
         drag.isDragging = true
-        const rect = drag.sourceEl.getBoundingClientRect()
-        const clone = drag.sourceEl.cloneNode(true) as HTMLElement
-        clone.style.position = 'fixed'
-        clone.style.left = `${rect.left}px`
-        clone.style.top = `${rect.top}px`
-        clone.style.width = `${rect.width}px`
-        clone.style.height = `${rect.height}px`
-        clone.style.opacity = '0.85'
-        clone.style.zIndex = '10000'
-        clone.style.pointerEvents = 'none'
-        clone.style.transition = 'none'
-        clone.style.margin = '0'
-        clone.style.willChange = 'transform'
-        clone.classList.add('touch-drag-clone')
-        document.body.appendChild(clone)
-        drag.clone = clone
+        drag.clone = createClone(drag.sourceEl)
         drag.sourceEl.classList.add('touch-drag-source')
       }
 
@@ -474,36 +510,154 @@ export default function AlgPractice() {
       if (drag.clone) drag.clone.style.display = ''
 
       if (el) {
-        const setCard = el.closest('[data-set-id]') as HTMLElement | null
-        if (setCard) {
-          const setId = setCard.getAttribute('data-set-id')!
-          drag.currentTarget = { type: 'section', id: setId }
-          setDragOverSetId(setId)
-          return
+        if (drag.type === 'set') {
+          // Looking for a set card target
+          const setCard = el.closest('[data-set-id]') as HTMLElement | null
+          if (setCard) {
+            const setId = setCard.getAttribute('data-set-id')!
+            const secId = setCard.getAttribute('data-set-section') || ''
+            drag.currentTarget = { type: 'set', id: setId, sectionId: secId }
+            setDragOverSetId(setId)
+            setDragOverSetSection(null)
+            return
+          }
+          // Looking for a section drop zone
+          if (hasSetSecs) {
+            const secEl = el.closest('[data-set-section-id]') as HTMLElement | null
+            if (secEl) {
+              const secId = secEl.getAttribute('data-set-section-id')!
+              drag.currentTarget = { type: 'section', id: secId }
+              setDragOverSetSection(secId)
+              setDragOverSetId(null)
+              return
+            }
+          }
+        } else if (drag.type === 'section') {
+          // Looking for a section target (reorder sections)
+          const secEl = el.closest('[data-set-section-id]') as HTMLElement | null
+          if (secEl) {
+            const secId = secEl.getAttribute('data-set-section-id')!
+            drag.currentTarget = { type: 'section', id: secId }
+            setDragOverSetSection(secId)
+            return
+          }
         }
       }
       drag.currentTarget = null
       setDragOverSetId(null)
+      setDragOverSetSection(null)
     }
 
     const handleTouchEnd = () => {
       const drag = touchDragRef.current
-      if (!drag || drag.type !== 'section') return
+      if (!drag || (drag.type !== 'set' && drag.type !== 'section')) return
 
       if (drag.holdTimer) clearTimeout(drag.holdTimer)
 
-      if (drag.isDragging && drag.currentTarget && drag.sectionId) {
-        const fromId = drag.sectionId
-        const toId = drag.currentTarget.id
-        if (fromId !== toId) {
-          const fromIdx = customSets.findIndex(s => s.id === fromId)
-          const toIdx = customSets.findIndex(s => s.id === toId)
-          if (fromIdx !== -1 && toIdx !== -1) {
-            const next = [...customSets]
-            const [moved] = next.splice(fromIdx, 1)
-            next.splice(toIdx, 0, moved)
-            saveCustomSets(next)
-            setCustomSets(next)
+      if (drag.isDragging && drag.currentTarget) {
+        if (drag.type === 'set' && drag.setId) {
+          if (hasSetSecs) {
+            const fromSecId = drag.fromSetSectionId || ''
+            if (drag.currentTarget.type === 'set') {
+              const targetSetId = drag.currentTarget.id
+              const targetSecId = drag.currentTarget.sectionId || ''
+              if (drag.setId !== targetSetId) {
+                if (fromSecId === '__unsorted-sets' && targetSecId === '__unsorted-sets') {
+                  // Reorder within unsorted (reorder customSets)
+                  const fromIdx = customSets.findIndex(s => s.id === drag.setId)
+                  const toIdx = customSets.findIndex(s => s.id === targetSetId)
+                  if (fromIdx !== -1 && toIdx !== -1) {
+                    const next = [...customSets]
+                    const [moved] = next.splice(fromIdx, 1)
+                    next.splice(toIdx, 0, moved)
+                    saveCustomSets(next)
+                    setCustomSets(next)
+                  }
+                } else if (fromSecId === '__unsorted-sets') {
+                  // Move from unsorted into a section
+                  const toIdx = setListSections.find(s => s.id === targetSecId)?.setIds.indexOf(targetSetId) ?? -1
+                  if (toIdx !== -1) {
+                    const next = setListSections.map(s => {
+                      if (s.id === targetSecId) {
+                        const ids = [...s.setIds.filter(id => id !== drag.setId)]
+                        ids.splice(toIdx, 0, drag.setId!)
+                        return { ...s, setIds: ids }
+                      }
+                      return s
+                    })
+                    saveSetSections(next)
+                    setSetListSections(next)
+                  }
+                } else if (targetSecId === '__unsorted-sets') {
+                  // Move from section to unsorted
+                  const next = setListSections.map(s =>
+                    s.id === fromSecId ? { ...s, setIds: s.setIds.filter(id => id !== drag.setId) } : s
+                  )
+                  saveSetSections(next)
+                  setSetListSections(next)
+                } else {
+                  // Move within/across sections
+                  const toIdx = setListSections.find(s => s.id === targetSecId)?.setIds.indexOf(targetSetId) ?? -1
+                  if (toIdx !== -1) {
+                    const next = setListSections.map(s => {
+                      let ids = s.setIds
+                      if (s.id === fromSecId) ids = ids.filter(id => id !== drag.setId)
+                      if (s.id === targetSecId) {
+                        ids = [...ids.filter(id => id !== drag.setId)]
+                        ids.splice(toIdx, 0, drag.setId!)
+                      }
+                      return ids === s.setIds ? s : { ...s, setIds: ids }
+                    })
+                    saveSetSections(next)
+                    setSetListSections(next)
+                  }
+                }
+              }
+            } else if (drag.currentTarget.type === 'section') {
+              // Drop set onto section header
+              const toSecId = drag.currentTarget.id
+              if (fromSecId !== toSecId) {
+                const next = setListSections.map(s => {
+                  if (s.id === fromSecId) return { ...s, setIds: s.setIds.filter(id => id !== drag.setId) }
+                  if (s.id === toSecId) return { ...s, setIds: [...s.setIds, drag.setId!] }
+                  return s
+                })
+                saveSetSections(next)
+                setSetListSections(next)
+              }
+            }
+          } else {
+            // Flat mode - reorder customSets
+            if (drag.currentTarget.type === 'set') {
+              const fromId = drag.setId
+              const toId = drag.currentTarget.id
+              if (fromId !== toId) {
+                const fromIdx = customSets.findIndex(s => s.id === fromId)
+                const toIdx = customSets.findIndex(s => s.id === toId)
+                if (fromIdx !== -1 && toIdx !== -1) {
+                  const next = [...customSets]
+                  const [moved] = next.splice(fromIdx, 1)
+                  next.splice(toIdx, 0, moved)
+                  saveCustomSets(next)
+                  setCustomSets(next)
+                }
+              }
+            }
+          }
+        } else if (drag.type === 'section' && drag.sectionId && drag.currentTarget.type === 'section') {
+          // Reorder set sections
+          const fromId = drag.sectionId
+          const toId = drag.currentTarget.id
+          if (fromId !== toId) {
+            const fromIdx = setListSections.findIndex(s => s.id === fromId)
+            const toIdx = setListSections.findIndex(s => s.id === toId)
+            if (fromIdx !== -1 && toIdx !== -1) {
+              const next = [...setListSections]
+              const [moved] = next.splice(fromIdx, 1)
+              next.splice(toIdx, 0, moved)
+              saveSetSections(next)
+              setSetListSections(next)
+            }
           }
         }
       }
@@ -512,6 +666,7 @@ export default function AlgPractice() {
       if (drag.sourceEl) drag.sourceEl.classList.remove('touch-drag-source', 'touch-drag-ready')
       touchDragRef.current = null
       setDragOverSetId(null)
+      setDragOverSetSection(null)
     }
 
     window.addEventListener('touchmove', handleTouchMove, { passive: false })
@@ -521,7 +676,7 @@ export default function AlgPractice() {
       window.removeEventListener('touchmove', handleTouchMove)
       window.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [view, setListMode, customSets])
+  }, [view, setListMode, customSets, setListSections])
 
   const openSet = (set: AlgSet) => {
     setSelectedSet(set)
@@ -708,6 +863,12 @@ export default function AlgPractice() {
     const updated = customSets.filter(s => s.id !== setId)
     saveCustomSets(updated)
     setCustomSets(updated)
+    // Clean up from set sections
+    const cleanedSecs = setListSections.map(s => ({
+      ...s, setIds: s.setIds.filter(id => id !== setId)
+    }))
+    saveSetSections(cleanedSecs)
+    setSetListSections(cleanedSecs)
   }
 
   // Set list drag-and-drop reorder
@@ -745,6 +906,154 @@ export default function AlgPractice() {
 
   const handleSetDragEnd = () => {
     setDragOverSetId(null)
+    setDragOverSetSection(null)
+  }
+
+  // Sectioned set list drag handlers
+  const handleSetDragStartSectioned = (e: React.DragEvent, setId: string, sectionId: string) => {
+    e.dataTransfer.setData('application/algset-sectioned', JSON.stringify({ setId, fromSectionId: sectionId }))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleSetCardDropSectioned = (e: React.DragEvent, targetSetId: string, targetSectionId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOverSetId(null)
+    setDragOverSetSection(null)
+
+    const data = e.dataTransfer.getData('application/algset-sectioned')
+    if (!data) return
+    try {
+      const { setId, fromSectionId } = JSON.parse(data)
+      if (setId === targetSetId) return
+
+      if (fromSectionId === '__unsorted-sets' && targetSectionId === '__unsorted-sets') {
+        // Reorder within unsorted
+        const fromIdx = customSets.findIndex(s => s.id === setId)
+        const toIdx = customSets.findIndex(s => s.id === targetSetId)
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const next = [...customSets]
+          const [moved] = next.splice(fromIdx, 1)
+          next.splice(toIdx, 0, moved)
+          saveCustomSets(next)
+          setCustomSets(next)
+        }
+      } else if (fromSectionId === '__unsorted-sets') {
+        // Move from unsorted into section at target position
+        const toIdx = setListSections.find(s => s.id === targetSectionId)?.setIds.indexOf(targetSetId) ?? -1
+        if (toIdx !== -1) {
+          const next = setListSections.map(s => {
+            if (s.id === targetSectionId) {
+              const ids = [...s.setIds.filter(id => id !== setId)]
+              ids.splice(toIdx, 0, setId)
+              return { ...s, setIds: ids }
+            }
+            return s
+          })
+          saveSetSections(next)
+          setSetListSections(next)
+        }
+      } else if (targetSectionId === '__unsorted-sets') {
+        // Move from section to unsorted
+        const next = setListSections.map(s =>
+          s.id === fromSectionId ? { ...s, setIds: s.setIds.filter(id => id !== setId) } : s
+        )
+        saveSetSections(next)
+        setSetListSections(next)
+      } else {
+        // Move within/across sections
+        const toIdx = setListSections.find(s => s.id === targetSectionId)?.setIds.indexOf(targetSetId) ?? -1
+        if (toIdx === -1) return
+        const next = setListSections.map(s => {
+          let ids = s.setIds
+          if (s.id === fromSectionId) ids = ids.filter(id => id !== setId)
+          if (s.id === targetSectionId) {
+            ids = [...ids.filter(id => id !== setId)]
+            ids.splice(toIdx, 0, setId)
+          }
+          return ids === s.setIds ? s : { ...s, setIds: ids }
+        })
+        saveSetSections(next)
+        setSetListSections(next)
+      }
+    } catch { /* ignore */ }
+  }
+
+  const handleSetSectionDragOver = (e: React.DragEvent, sectionId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverSetSection(sectionId)
+  }
+
+  const handleSetSectionDragLeave = (e: React.DragEvent, sectionId: string) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      if (dragOverSetSection === sectionId) setDragOverSetSection(null)
+    }
+  }
+
+  const handleSetSectionDrop = (e: React.DragEvent, toSectionId: string) => {
+    e.preventDefault()
+    setDragOverSetSection(null)
+    setDragOverSetId(null)
+
+    // Section reorder
+    const sectionData = e.dataTransfer.getData('application/set-section')
+    if (sectionData) {
+      try {
+        const { sectionId: fromId } = JSON.parse(sectionData)
+        if (fromId === toSectionId) return
+        const fromIdx = setListSections.findIndex(s => s.id === fromId)
+        const toIdx = setListSections.findIndex(s => s.id === toSectionId)
+        if (fromIdx === -1 || toIdx === -1) return
+        const next = [...setListSections]
+        const [moved] = next.splice(fromIdx, 1)
+        next.splice(toIdx, 0, moved)
+        saveSetSections(next)
+        setSetListSections(next)
+      } catch { /* ignore */ }
+      return
+    }
+
+    // Set move to section
+    const data = e.dataTransfer.getData('application/algset-sectioned')
+    if (data) {
+      try {
+        const { setId, fromSectionId } = JSON.parse(data)
+        if (fromSectionId === toSectionId) return
+        const next = setListSections.map(s => {
+          if (s.id === fromSectionId) return { ...s, setIds: s.setIds.filter(id => id !== setId) }
+          if (s.id === toSectionId) return { ...s, setIds: [...s.setIds, setId] }
+          return s
+        })
+        saveSetSections(next)
+        setSetListSections(next)
+      } catch { /* ignore */ }
+    }
+  }
+
+  const handleSetSectionDragStart = (e: React.DragEvent, sectionId: string) => {
+    e.dataTransfer.setData('application/set-section', JSON.stringify({ sectionId }))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const addSetSection = () => {
+    const id = `set-sec-${Date.now()}`
+    const next = [...setListSections, { id, name: 'New Section', setIds: [] }]
+    saveSetSections(next)
+    setSetListSections(next)
+    setEditingSetSectionId(id)
+  }
+
+  const deleteSetSection = (sectionId: string) => {
+    const next = setListSections.filter(s => s.id !== sectionId)
+    saveSetSections(next)
+    setSetListSections(next)
+  }
+
+  const renameSetSection = (sectionId: string, name: string) => {
+    const next = setListSections.map(s => s.id === sectionId ? { ...s, name } : s)
+    saveSetSections(next)
+    setSetListSections(next)
   }
 
   const deleteCase = () => {
@@ -784,6 +1093,129 @@ export default function AlgPractice() {
   // --- Set list view ---
   if (view === 'sets') {
     const setsEditing = customSets.length === 0 || setListMode === 'edit'
+    const hasSetSecs = setListSections.length > 0
+    const setMap = new Map(customSets.map(s => [s.id, s]))
+    const unsortedSetIds = getUnsortedSetIds(customSets, setListSections)
+
+    const handleSetTouchStart = (e: React.TouchEvent, setId: string, sectionId: string) => {
+      if (touchDragRef.current) return
+      const touch = e.touches[0]
+      const sourceEl = e.currentTarget as HTMLElement
+      const holdTimer = setTimeout(() => {
+        if (touchDragRef.current) {
+          touchDragRef.current.dragReady = true
+          sourceEl.classList.add('touch-drag-ready')
+        }
+      }, 200)
+      touchDragRef.current = {
+        type: 'set',
+        setId,
+        fromSetSectionId: sectionId,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        sourceEl,
+        clone: null,
+        isDragging: false,
+        dragReady: false,
+        holdTimer,
+        currentTarget: null,
+      }
+    }
+
+    const handleSetSectionTouchStart = (e: React.TouchEvent, sectionId: string) => {
+      if (touchDragRef.current) return
+      e.stopPropagation()
+      const touch = e.touches[0]
+      const sectionEl = (e.currentTarget as HTMLElement).closest('.alg-set-section') as HTMLElement
+      const holdTimer = setTimeout(() => {
+        if (touchDragRef.current) {
+          touchDragRef.current.dragReady = true
+          sectionEl.classList.add('touch-drag-ready')
+        }
+      }, 200)
+      touchDragRef.current = {
+        type: 'section',
+        sectionId,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        sourceEl: sectionEl,
+        clone: null,
+        isDragging: false,
+        dragReady: false,
+        holdTimer,
+        currentTarget: null,
+      }
+    }
+
+    const renderSetCard = (set: AlgSet, sectionId: string) => {
+      const isSectioned = hasSetSecs
+      return (
+        <button
+          key={set.id}
+          data-set-id={setsEditing ? set.id : undefined}
+          data-set-section={setsEditing && isSectioned ? sectionId : undefined}
+          className={`alg-set-card ${setsEditing && dragOverSetId === set.id ? 'drag-over' : ''}`}
+          onClick={() => openSet(set)}
+          draggable={setsEditing}
+          onDragStart={setsEditing ? (isSectioned
+            ? e => handleSetDragStartSectioned(e, set.id, sectionId)
+            : e => handleSetDragStart(e, set.id)
+          ) : undefined}
+          onDragOver={setsEditing ? e => handleSetDragOver(e, set.id) : undefined}
+          onDragLeave={setsEditing ? e => handleSetDragLeave(e, set.id) : undefined}
+          onDrop={setsEditing ? (isSectioned
+            ? e => handleSetCardDropSectioned(e, set.id, sectionId)
+            : e => handleSetDrop(e, set.id)
+          ) : undefined}
+          onDragEnd={setsEditing ? handleSetDragEnd : undefined}
+          onTouchStart={setsEditing ? e => handleSetTouchStart(e, set.id, sectionId) : undefined}
+        >
+          <span className="alg-set-name">{set.name}</span>
+          <span className="alg-set-count">{set.cases.length} cases</span>
+          {setsEditing && (
+            <span className="alg-set-actions">
+              <span className="alg-set-action" onClick={e => exportSet(e, set)} title="Export">&#8615;</span>
+              <span className="alg-set-action" onClick={e => duplicateSet(e, set)} title="Duplicate">&#9776;</span>
+              <span className="alg-set-action alg-set-action-delete" onClick={e => deleteCustomSet(e, set.id)} title="Delete">&times;</span>
+            </span>
+          )}
+        </button>
+      )
+    }
+
+    const renderSetSectionHeader = (section: SetSection) => (
+      <div className="alg-section-header" key={`header-${section.id}`}>
+        {setsEditing && (
+          <span
+            className="alg-section-grip"
+            draggable
+            onDragStart={e => { e.stopPropagation(); handleSetSectionDragStart(e, section.id) }}
+            onDragEnd={handleSetDragEnd}
+            onTouchStart={e => handleSetSectionTouchStart(e, section.id)}
+            title="Drag to reorder"
+          >&#10303;</span>
+        )}
+        {setsEditing && editingSetSectionId === section.id ? (
+          <input
+            className="alg-section-name-input"
+            autoFocus
+            defaultValue={section.name}
+            onBlur={e => { renameSetSection(section.id, e.target.value || section.name); setEditingSetSectionId(null) }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          />
+        ) : (
+          <h3
+            className="alg-section-name"
+            onClick={setsEditing ? () => setEditingSetSectionId(section.id) : undefined}
+          >
+            {section.name}
+          </h3>
+        )}
+        {setsEditing && (
+          <button className="alg-section-delete" onClick={() => deleteSetSection(section.id)} title="Delete section">&times;</button>
+        )}
+      </div>
+    )
 
     return (
       <div className="alg-practice">
@@ -802,61 +1234,68 @@ export default function AlgPractice() {
           <p className="alg-empty-message">No algorithm sets yet! Try adding one.</p>
         )}
 
-        <div className="alg-sets">
-          {customSets.map(set => (
-            <button
-              key={set.id}
-              data-set-id={setsEditing ? set.id : undefined}
-              className={`alg-set-card ${setsEditing && dragOverSetId === set.id ? 'drag-over' : ''}`}
-              onClick={() => openSet(set)}
-              draggable={setsEditing}
-              onDragStart={setsEditing ? e => handleSetDragStart(e, set.id) : undefined}
-              onDragOver={setsEditing ? e => handleSetDragOver(e, set.id) : undefined}
-              onDragLeave={setsEditing ? e => handleSetDragLeave(e, set.id) : undefined}
-              onDrop={setsEditing ? e => handleSetDrop(e, set.id) : undefined}
-              onDragEnd={setsEditing ? handleSetDragEnd : undefined}
-              onTouchStart={setsEditing ? e => {
-                if (touchDragRef.current) return
-                const touch = e.touches[0]
-                const sourceEl = e.currentTarget as HTMLElement
-                const holdTimer = setTimeout(() => {
-                  if (touchDragRef.current) {
-                    touchDragRef.current.dragReady = true
-                    sourceEl.classList.add('touch-drag-ready')
-                  }
-                }, 200)
-                touchDragRef.current = {
-                  type: 'section',
-                  sectionId: set.id,
-                  startX: touch.clientX,
-                  startY: touch.clientY,
-                  sourceEl,
-                  clone: null,
-                  isDragging: false,
-                  dragReady: false,
-                  holdTimer,
-                  currentTarget: null,
-                }
-              } : undefined}
-            >
-              <span className="alg-set-name">{set.name}</span>
-              <span className="alg-set-count">{set.cases.length} cases</span>
-              {setsEditing && (
-                <span className="alg-set-actions">
-                  <span className="alg-set-action" onClick={e => exportSet(e, set)} title="Export">&#8615;</span>
-                  <span className="alg-set-action" onClick={e => duplicateSet(e, set)} title="Duplicate">&#9776;</span>
-                  <span className="alg-set-action alg-set-action-delete" onClick={e => deleteCustomSet(e, set.id)} title="Delete">&times;</span>
-                </span>
-              )}
-            </button>
-          ))}
-          {setsEditing && (
+        {hasSetSecs ? (
+          <>
+            {setListSections.map(section => (
+              <div
+                key={section.id}
+                data-set-section-id={setsEditing ? section.id : undefined}
+                className={`alg-set-section ${setsEditing && dragOverSetSection === section.id ? 'drag-over' : ''}`}
+                onDragOver={setsEditing ? e => handleSetSectionDragOver(e, section.id) : undefined}
+                onDragLeave={setsEditing ? e => handleSetSectionDragLeave(e, section.id) : undefined}
+                onDrop={setsEditing ? e => handleSetSectionDrop(e, section.id) : undefined}
+              >
+                {renderSetSectionHeader(section)}
+                <div className="alg-sets">
+                  {section.setIds.map(setId => {
+                    const set = setMap.get(setId)
+                    if (!set) return null
+                    return renderSetCard(set, section.id)
+                  })}
+                </div>
+              </div>
+            ))}
+            {unsortedSetIds.length > 0 && (
+              <div
+                data-set-section-id={setsEditing ? '__unsorted-sets' : undefined}
+                className={`alg-set-section alg-section-unsorted ${setsEditing && dragOverSetSection === '__unsorted-sets' ? 'drag-over' : ''}`}
+                onDragOver={setsEditing ? e => handleSetSectionDragOver(e, '__unsorted-sets') : undefined}
+                onDragLeave={setsEditing ? e => handleSetSectionDragLeave(e, '__unsorted-sets') : undefined}
+                onDrop={setsEditing ? e => handleSetSectionDrop(e, '__unsorted-sets') : undefined}
+              >
+                <div className="alg-section-header">
+                  <h3 className="alg-section-name unsorted">Unsorted</h3>
+                </div>
+                <div className="alg-sets">
+                  {unsortedSetIds.map(setId => {
+                    const set = setMap.get(setId)
+                    if (!set) return null
+                    return renderSetCard(set, '__unsorted-sets')
+                  })}
+                </div>
+              </div>
+            )}
+            {setsEditing && (
+              <button className="alg-add-section-btn" onClick={addSetSection}>+ Add Section</button>
+            )}
+          </>
+        ) : (
+          <div className="alg-sets">
+            {customSets.map(set => renderSetCard(set, '__flat-sets'))}
+          </div>
+        )}
+
+        {setsEditing && (
+          <>
+            {!hasSetSecs && (
+              <button className="alg-add-section-btn" onClick={addSetSection}>+ Add Section</button>
+            )}
             <button className="alg-new-set-card" onClick={() => setShowNewSetModal(true)}>
               <span className="alg-set-name">+</span>
               <span className="alg-set-count">New Set</span>
             </button>
-          )}
-        </div>
+          </>
+        )}
 
         {showNewSetModal && (
           <div className="modal-overlay" onClick={() => { setShowNewSetModal(false); setSelectedPreset('') }}>

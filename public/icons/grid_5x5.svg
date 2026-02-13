@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#1a1a2e" rx="12"/>
+  <rect x="10.00" y="10.00" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="88.04" y="10.00" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="166.07" y="10.00" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="244.11" y="10.00" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="322.14" y="10.00" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="10.00" y="88.04" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="88.04" y="88.04" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="166.07" y="88.04" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="244.11" y="88.04" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="322.14" y="88.04" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="10.00" y="166.07" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="88.04" y="166.07" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="166.07" y="166.07" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="244.11" y="166.07" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="322.14" y="166.07" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="10.00" y="244.11" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="88.04" y="244.11" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="166.07" y="244.11" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="244.11" y="244.11" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="322.14" y="244.11" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="10.00" y="322.14" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="88.04" y="322.14" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="166.07" y="322.14" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="244.11" y="322.14" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+  <rect x="322.14" y="322.14" width="67.86" height="67.86" rx="12.21" ry="12.21" fill="white"/>
+</svg>

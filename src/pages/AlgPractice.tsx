@@ -16,7 +16,12 @@ const PRESETS = [
 ]
 
 const ALGSET_ICONS = [
-  { id: '2x2', name: '2×2', path: '/icons/2x2.svg' },
+  { id: '2x2', name: '2×2', path: '/icons/grid_2x2.svg' },
+  { id: '3x3', name: '3×3', path: '/icons/grid_3x3.svg' },
+  { id: '4x4', name: '4×4', path: '/icons/grid_4x4.svg' },
+  { id: '5x5', name: '5×5', path: '/icons/grid_5x5.svg' },
+  { id: '6x6', name: '6×6', path: '/icons/grid_6x6.svg' },
+  { id: '7x7', name: '7×7', path: '/icons/grid_7x7.svg' }
 ]
 
 const CUSTOM_SETS_KEY = 'scrambl-custom-algsets'

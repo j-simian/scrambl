@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <rect width="400" height="400" fill="#1a1a2e" rx="12"/>
+  <rect x="10.00" y="10.00" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="108.20" y="10.00" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="206.40" y="10.00" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="304.61" y="10.00" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="10.00" y="108.20" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="108.20" y="108.20" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="206.40" y="108.20" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="304.61" y="108.20" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="10.00" y="206.40" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="108.20" y="206.40" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="206.40" y="206.40" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="304.61" y="206.40" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="10.00" y="304.61" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="108.20" y="304.61" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="206.40" y="304.61" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+  <rect x="304.61" y="304.61" width="85.39" height="85.39" rx="15.37" ry="15.37" fill="white"/>
+</svg>

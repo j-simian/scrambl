@@ -949,6 +949,23 @@ main {
   border-color: rgba(255, 255, 255, 0.5);
 }
 
+.alg-section-edit {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1rem;
+  opacity: 0.3;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+  margin-left: auto;
+}
+
+.alg-section-edit:hover {
+  opacity: 1;
+}
+
 .alg-section-delete {
   appearance: none;
   background: transparent;
@@ -960,6 +977,10 @@ main {
   padding: 0 0.25rem;
   line-height: 1;
   margin-left: auto;
+}
+
+.alg-section-edit + .alg-section-delete {
+  margin-left: 0;
 }
 
 .alg-section-delete:hover {

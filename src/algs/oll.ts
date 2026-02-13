@@ -10,7 +10,6 @@ export interface AlgSetSection {
   id: string
   name: string
   caseIds: string[]
-  icon?: string
 }
 
 export interface AlgSet {

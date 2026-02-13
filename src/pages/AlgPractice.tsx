@@ -1009,7 +1009,7 @@ export default function AlgPractice() {
               onBlur={e => { renameSetSection(section.id, e.target.value || section.name); setEditingSetSectionId(null) }}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
             />
-            <div className="alg-icon-picker alg-icon-picker-inline">
+            <div className="alg-icon-picker alg-icon-picker-inline" onMouseDown={e => e.preventDefault()}>
               <div className="alg-icon-options">
                 <button
                   className={`alg-icon-option ${!section.icon ? 'active' : ''}`}
@@ -1428,12 +1428,6 @@ export default function AlgPractice() {
       saveSections(selectedSet.id, next)
     }
 
-    const updateSectionIcon = (sectionId: string, icon: string | undefined) => {
-      const next = sections.map(s => s.id === sectionId ? { ...s, icon } : s)
-      setSections(next)
-      saveSections(selectedSet.id, next)
-    }
-
     const isEditMode = caseViewMode === 'edit'
 
     const toggleCaseSelection = (caseId: string) => {
@@ -1495,35 +1489,14 @@ export default function AlgPractice() {
             title="Drag to reorder"
           >&#10303;</span>
         )}
-        {section.icon && <img className="alg-section-icon" src={section.icon} alt="" />}
         {isEditMode && editingSectionId === section.id ? (
-          <>
-            <input
-              className="alg-section-name-input"
-              autoFocus
-              defaultValue={section.name}
-              onBlur={e => { renameSection(section.id, e.target.value || section.name); setEditingSectionId(null) }}
-              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-            />
-            <div className="alg-icon-picker alg-icon-picker-inline">
-              <div className="alg-icon-options">
-                <button
-                  className={`alg-icon-option ${!section.icon ? 'active' : ''}`}
-                  onClick={() => updateSectionIcon(section.id, undefined)}
-                >None</button>
-                {ALGSET_ICONS.map(icon => (
-                  <button
-                    key={icon.id}
-                    className={`alg-icon-option ${section.icon === icon.path ? 'active' : ''}`}
-                    onClick={() => updateSectionIcon(section.id, icon.path)}
-                    title={icon.name}
-                  >
-                    <img src={icon.path} alt={icon.name} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
+          <input
+            className="alg-section-name-input"
+            autoFocus
+            defaultValue={section.name}
+            onBlur={e => { renameSection(section.id, e.target.value || section.name); setEditingSectionId(null) }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          />
         ) : (
           <h3
             className="alg-section-name"

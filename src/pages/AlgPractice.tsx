@@ -1031,6 +1031,9 @@ export default function AlgPractice() {
             {section.name}
           </h3>
         )}
+        {setsEditing && editingSetSectionId !== section.id && (
+          <button className="alg-section-edit" onClick={() => setEditingSetSectionId(section.id)} title="Edit section">&#9998;</button>
+        )}
         {setsEditing && (
           <button className="alg-section-delete" onClick={() => deleteSetSection(section.id)} title="Delete section">&times;</button>
         )}
@@ -1497,6 +1500,9 @@ export default function AlgPractice() {
           >
             {section.name}
           </h3>
+        )}
+        {isEditMode && editingSectionId !== section.id && (
+          <button className="alg-section-edit" onClick={() => setEditingSectionId(section.id)} title="Edit section">&#9998;</button>
         )}
         {isEditMode && (
           <button className="alg-section-delete" onClick={() => deleteSection(section.id)} title="Delete section">&times;</button>

@@ -181,7 +181,19 @@ function Timer() {
       </div>
 
       <main>
-        <div className="scramble">{scramble}</div>
+        <div className="scramble-row">
+          <div className="scramble">{scramble}</div>
+          <button
+            className="new-scramble-btn"
+            onClick={() => setScramble(generateScramble(currentEvent))}
+            title="New scramble"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 4v6h-6" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
+        </div>
         <div ref={timerRef} className={`timer ${timerState}`}>
           <span className="time">{formatTime(displayTime)}</span>
           <span className="hint">
